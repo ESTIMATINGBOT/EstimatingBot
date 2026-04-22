@@ -341,6 +341,61 @@ export async function registerRoutes(httpServer: Server, app: Express) {
     });
   });
 
+  // Accept pre-computed takeoff JSON — generate PDF + email (no AI/rendering needed)
+  // POST body: { customerName, customerEmail, customerPhone, projectName, takeoff: {...} }
+  // takeoff is the JSON object from claude_takeoff_all_pages output
+  app.post("/api/bids/from-takeoff", express.json({ limit: "10mb" }), async (req, res) => {
+    const { customerName, customerEmail, customerPhone, projectName, takeoff } = req.body;
+    if (!customerName || !customerEmail || !customerPhone) {
+      return res.status(400).json({ error: "Name, email, and phone are required" });
+    }
+    if (!takeoff || typeof takeoff !== "object") {
+      return res.status(400).json({ error: "takeoff JSON object is required" });
+    }
+    const bid = storage.createBid({
+      customerName, customerEmail, customerPhone,
+      projectName: projectName || takeoff.project_name || "Custom Project",
+      originalFilename: "from-takeoff-json",
+      createdAt: new Date().toISOString(),
+    });
+    res.json({ bidId: bid.id, status: "processing" });
+    storage.updateBidStatus(bid.id, "processing", "Generating PDF from takeoff data...");
+
+    (async () => {
+      const outputPdf = path.join(os.tmpdir(), `rcp_bid_${bid.id}_${Date.now()}.pdf`);
+      const bidDate = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+      // Write takeoff JSON to a temp file so the Python script can read it
+      const takeoffJsonPath = path.join(os.tmpdir(), `takeoff_${bid.id}.json`);
+      fs.writeFileSync(takeoffJsonPath, JSON.stringify(takeoff));
+
+      const env = { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "" };
+      const result = await runTakeoff(takeoffJsonPath, outputPdf, customerName,
+        projectName || takeoff.project_name || "Custom Project", bidDate, env);
+
+      try { fs.unlinkSync(takeoffJsonPath); } catch {}
+
+      if (!result.success || !result.pdfPath) {
+        storage.updateBidStatus(bid.id, "failed", result.error || "PDF generation failed");
+        return;
+      }
+      const grandTotalStr = result.grandTotal
+        ? `$${result.grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : "";
+      try {
+        await sendBidEmails(result.pdfPath!, customerName, customerEmail, customerPhone,
+          projectName || takeoff.project_name || "Custom Project");
+        storage.updateBidStatus(bid.id, "complete",
+          `Estimate sent to your email!${grandTotalStr ? ` Grand total: ${grandTotalStr}` : ""}`,
+          result.pdfPath);
+      } catch {
+        storage.updateBidStatus(bid.id, "complete",
+          `Estimate generated but email delivery failed.${grandTotalStr ? ` Grand total: ${grandTotalStr}` : ""}`,
+          result.pdfPath);
+      }
+      setTimeout(() => { try { fs.unlinkSync(result.pdfPath!); } catch {} }, 300_000);
+    })();
+  });
+
   // Download estimate PDF (available for 60s after completion)
   app.get("/api/bids/:id/download", (req, res) => {
     const bid = storage.getBid(Number(req.params.id));

@@ -1065,11 +1065,38 @@ def main():
     proj_name  = sys.argv[4] if len(sys.argv) > 4 else ""
     bid_date   = sys.argv[5] if len(sys.argv) > 5 else datetime.now().strftime("%B %d, %Y")
 
+    prices = fetch_qbo_prices()
+
+    # ── JSON INPUT MODE: skip takeoff, go straight to PDF generation ──────────
+    # When input_pdf ends in .json, it's a pre-computed takeoff (from external runner)
+    if input_pdf.endswith('.json'):
+        if not os.path.exists(input_pdf):
+            print(json.dumps({"success": False, "error": f"Takeoff JSON not found: {input_pdf}"}))
+            sys.exit(1)
+        with open(input_pdf) as f:
+            takeoff = json.load(f)
+        if not proj_name:
+            proj_name = takeoff.get("project_name", "Custom Project")
+        try:
+            grand_total = generate_bid_pdf(takeoff, prices, output_pdf, customer, proj_name, bid_date)
+            print(json.dumps({
+                "success": True,
+                "pdfPath": output_pdf,
+                "projectName": proj_name,
+                "projectAddress": takeoff.get("project_address", ""),
+                "barCount": len(takeoff.get("bars", [])),
+                "grandTotal": round(grand_total, 2) if grand_total else 0,
+                "warning": ""
+            }))
+        except Exception as e:
+            print(json.dumps({"success": False, "error": f"PDF generation failed: {str(e)}"}))
+            sys.exit(1)
+        sys.exit(0)
+    # ─────────────────────────────────────────────────────────────────────────
+
     if not os.path.exists(input_pdf):
         print(json.dumps({"success": False, "error": f"Input PDF not found: {input_pdf}"}))
         sys.exit(1)
-
-    prices = fetch_qbo_prices()
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # 50 DPI + batch-5: memory-safe on Railway 512MB (62MB raw/batch vs 512MB limit)
