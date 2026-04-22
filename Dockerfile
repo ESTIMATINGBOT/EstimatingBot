@@ -9,8 +9,8 @@ RUN apt-get update && apt-get install -y \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python packages
-RUN pip3 install --break-system-packages anthropic reportlab pillow
+# Install Python packages (pymupdf = pure-Python PDF renderer, no poppler needed)
+RUN pip3 install --break-system-packages anthropic reportlab pillow pymupdf pikepdf pdfplumber
 
 WORKDIR /app
 

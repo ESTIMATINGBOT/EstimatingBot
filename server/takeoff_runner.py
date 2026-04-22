@@ -80,11 +80,28 @@ def fetch_qbo_prices():
 
 # ── PAGE RENDERING ─────────────────────────────────────────────────────────────
 def get_page_count(pdf_path):
+    # Try pdfinfo first (fast)
     try:
         r = subprocess.run(["pdfinfo", pdf_path], capture_output=True, text=True, timeout=15)
         for line in r.stdout.splitlines():
             if line.lower().startswith("pages:"):
-                return int(line.split(":", 1)[1].strip())
+                n = int(line.split(":", 1)[1].strip())
+                if n > 0:
+                    return n
+    except Exception:
+        pass
+    # Fallback: use pdfplumber (pure Python, always available)
+    try:
+        import pdfplumber
+        with pdfplumber.open(pdf_path) as pdf:
+            return len(pdf.pages)
+    except Exception:
+        pass
+    # Last resort: pikepdf
+    try:
+        import pikepdf
+        with pikepdf.open(pdf_path) as pdf:
+            return len(pdf.pages)
     except Exception:
         pass
     return 0
@@ -118,28 +135,49 @@ MAX_RENDER_PAGES = 150
 
 def score_pages_by_text(pdf_path, total_pages):
     """
-    Use pdftotext to extract text from all pages and score each by structural
-    keyword hits. Fast — pure text extraction, no image rendering.
-    Returns dict of {page_num (1-based): score}.
+    Score each page by structural keyword hits from extractable text.
+    Tries pdftotext first, falls back to pdfplumber (pure Python).
     Image-only pages score 0 but are still candidates via neighbour expansion.
+    Returns dict of {page_num (1-based): score}.
     """
     scores = {}
+    # --- Try pdftotext (fast, handles multi-page in one shot) ---
+    pdftotext_ok = False
     try:
         r = subprocess.run(
             ["pdftotext", "-layout", pdf_path, "-"],
             capture_output=True, text=True, timeout=120
         )
-        pages_text = r.stdout.split("\x0c")  # form-feed separates pages
-        for i, text in enumerate(pages_text):
-            pg = i + 1
-            if pg > total_pages:
-                break
-            t = text.lower()
-            score = sum(len(re.findall(kw, t, re.IGNORECASE)) for kw in STRUCTURAL_KEYWORDS)
-            scores[pg] = score
+        if r.returncode == 0 and r.stdout.strip():
+            pages_text = r.stdout.split("\x0c")  # form-feed separates pages
+            for i, text in enumerate(pages_text):
+                pg = i + 1
+                if pg > total_pages:
+                    break
+                t = text.lower()
+                score = sum(len(re.findall(kw, t, re.IGNORECASE)) for kw in STRUCTURAL_KEYWORDS)
+                scores[pg] = score
+            pdftotext_ok = True
     except Exception:
         pass
-    # Fill in 0 for any pages pdftotext missed
+    # --- Fallback: pdfplumber (pure Python, no poppler needed) ---
+    if not pdftotext_ok:
+        try:
+            import pdfplumber
+            with pdfplumber.open(pdf_path) as pdf:
+                for i, page in enumerate(pdf.pages):
+                    pg = i + 1
+                    if pg > total_pages:
+                        break
+                    try:
+                        text = (page.extract_text() or "").lower()
+                    except Exception:
+                        text = ""
+                    score = sum(len(re.findall(kw, text, re.IGNORECASE)) for kw in STRUCTURAL_KEYWORDS)
+                    scores[pg] = score
+        except Exception:
+            pass
+    # Fill in 0 for any pages missed
     for pg in range(1, total_pages + 1):
         scores.setdefault(pg, 0)
     return scores
@@ -184,13 +222,30 @@ def select_pages_to_render(total_pages, scores):
     result = sorted(selected)[:MAX_RENDER_PAGES]
     return result
 
+def _render_page_fitz(pdf_path, tmpdir, pg_1based, dpi=75):
+    """Render a single page using PyMuPDF (no poppler needed). pg_1based is 1-indexed."""
+    try:
+        import fitz
+        doc = fitz.open(pdf_path)
+        page = doc[pg_1based - 1]  # fitz is 0-indexed
+        mat = fitz.Matrix(dpi / 72, dpi / 72)
+        pix = page.get_pixmap(matrix=mat, alpha=False)
+        out_path = os.path.join(tmpdir, f"pg{pg_1based:04d}-fitz.png")
+        pix.save(out_path)
+        doc.close()
+        return out_path
+    except Exception:
+        return None
+
 def render_pages(pdf_path, tmpdir, page_numbers, dpi=75):
-    """Render specific pages of a PDF to PNG. Returns sorted list of image paths."""
+    """Render specific pages of a PDF to PNG. Tries pdftoppm first, falls back to PyMuPDF."""
     images = []
     for pg in page_numbers:
         prefix = os.path.join(tmpdir, f"pg{pg:04d}")
+        rendered = False
+        # Try pdftoppm first
         try:
-            subprocess.run(
+            r = subprocess.run(
                 ["pdftoppm", "-r", str(dpi), "-png",
                  "-f", str(pg), "-l", str(pg), pdf_path, prefix],
                 capture_output=True, timeout=30
@@ -199,10 +254,18 @@ def render_pages(pdf_path, tmpdir, page_numbers, dpi=75):
                 os.path.join(tmpdir, f)
                 for f in os.listdir(tmpdir)
                 if f.startswith(f"pg{pg:04d}") and f.endswith(".png")
+                and "fitz" not in f
             ])
-            images.extend(matches)
+            if matches:
+                images.extend(matches)
+                rendered = True
         except Exception:
             pass
+        # Fallback: PyMuPDF
+        if not rendered:
+            out = _render_page_fitz(pdf_path, tmpdir, pg, dpi)
+            if out:
+                images.append(out)
     return images
 
 def render_all_pages(pdf_path, tmpdir, dpi=75):
@@ -241,9 +304,10 @@ def render_all_pages(pdf_path, tmpdir, dpi=75):
     if filtered:
         images = render_pages(pdf_path, tmpdir, pages_to_render, dpi=dpi)
     else:
-        # Small plan set — render all at once (faster than one-by-one)
+        # Small plan set — render all at once with pdftoppm, fall back to fitz
+        pdftoppm_ok = False
         try:
-            subprocess.run(
+            r = subprocess.run(
                 ["pdftoppm", "-r", str(dpi), "-png", pdf_path,
                  os.path.join(tmpdir, "page")],
                 capture_output=True, timeout=480
@@ -253,8 +317,20 @@ def render_all_pages(pdf_path, tmpdir, dpi=75):
                 for f in os.listdir(tmpdir)
                 if f.startswith("page") and f.endswith(".png")
             ])
-        except Exception as e:
-            return [], str(e)
+            if images:
+                pdftoppm_ok = True
+        except Exception:
+            pass
+        if not pdftoppm_ok:
+            # PyMuPDF fallback — render page by page
+            images = []
+            for pg in range(1, total + 1):
+                out = _render_page_fitz(pdf_path, tmpdir, pg, dpi)
+                if out:
+                    images.append(out)
+            images = sorted(images)
+            if not images:
+                return [], "Render failed: neither pdftoppm nor PyMuPDF produced output"
 
     meta = {
         "total_pages": total,
