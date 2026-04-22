@@ -20,8 +20,15 @@ from datetime import datetime
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 QBO_ITEMS_URL     = "https://rcp-sms-bot-production.up.railway.app/api/qbo/items"
-LOGO              = os.path.join(os.path.dirname(__file__), "..", "logoheader.jpg")
-LOGO              = os.path.abspath(LOGO)
+# Try multiple possible logo locations (dev vs production)
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_logo_candidates = [
+    os.path.join(_script_dir, "..", "logoheader.jpg"),           # dev: server/../logoheader.jpg
+    os.path.join(_script_dir, "..", "client", "public", "logoheader.jpg"),  # dev alt
+    os.path.join(_script_dir, "public", "logoheader.jpg"),       # prod: dist/public/logoheader.jpg
+    os.path.join(_script_dir, "..", "public", "logoheader.jpg"), # prod alt
+]
+LOGO = next((os.path.abspath(p) for p in _logo_candidates if os.path.exists(os.path.abspath(p))), "")
 
 # Fallback hardcoded prices if QBO endpoint is unreachable
 FALLBACK_PRICES = {

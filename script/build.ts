@@ -1,6 +1,6 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "node:fs/promises";
+import { rm, readFile, copyFile } from "node:fs/promises";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -59,7 +59,19 @@ async function buildAll() {
   });
 }
 
-buildAll().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+buildAll()
+  .then(async () => {
+    // Copy Python script and logo to dist/ so they're available at runtime
+    console.log("copying runtime assets to dist/...");
+    await copyFile("server/takeoff_runner.py", "dist/takeoff_runner.py");
+    try {
+      await copyFile("client/public/logoheader.jpg", "dist/public/logoheader.jpg");
+    } catch {
+      // logo may already be in dist/public via Vite build
+    }
+    console.log("build complete.");
+  })
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
