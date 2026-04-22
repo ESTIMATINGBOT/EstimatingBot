@@ -161,7 +161,7 @@ def pdf_to_images(pdf_path, tmpdir, max_pages=8):
     if total <= 20:
         try:
             subprocess.run(
-                ["pdftoppm", "-r", "150", "-png", pdf_path,
+                ["pdftoppm", "-r", "100", "-png", pdf_path,
                  os.path.join(tmpdir, "page")],
                 capture_output=True, timeout=120
             )
@@ -177,7 +177,7 @@ def pdf_to_images(pdf_path, tmpdir, max_pages=8):
     scored = score_pages_by_text(pdf_path, total)
 
     # Take pages with score > 0, up to 20; fall back to first 12 if nothing scores
-    structural_pages = [pg for pg, sc in scored if sc > 0][:20]
+    structural_pages = [pg for pg, sc in scored if sc > 0][:12]
     if not structural_pages:
         structural_pages = list(range(1, min(total+1, 13)))  # first 12
 
@@ -187,7 +187,7 @@ def pdf_to_images(pdf_path, tmpdir, max_pages=8):
             structural_pages.append(p)
 
     structural_pages = sorted(set(structural_pages))
-    return render_pages(pdf_path, tmpdir, structural_pages, dpi=150)
+    return render_pages(pdf_path, tmpdir, structural_pages, dpi=100)
 
 # ── CLAUDE TAKEOFF ────────────────────────────────────────────────────────────
 TAKEOFF_SYSTEM = """You are an expert rebar takeoff estimator for Rebar Concrete Products in McKinney, TX.
@@ -238,9 +238,15 @@ def claude_takeoff(image_paths):
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         
         content = []
-        for img_path in image_paths[:20]:  # Up to 20 structural pages
+        total_b64_bytes = 0
+        MAX_PAYLOAD = 18 * 1024 * 1024  # 18 MB base64 safety limit
+        for img_path in image_paths[:12]:  # Up to 12 structural pages
             with open(img_path, "rb") as f:
-                img_b64 = base64.standard_b64encode(f.read()).decode("utf-8")
+                raw_bytes = f.read()
+            img_b64 = base64.standard_b64encode(raw_bytes).decode("utf-8")
+            total_b64_bytes += len(img_b64)
+            if total_b64_bytes > MAX_PAYLOAD:
+                break  # stop adding pages once payload limit reached
             content.append({
                 "type": "image",
                 "source": {"type": "base64", "media_type": "image/png", "data": img_b64}
