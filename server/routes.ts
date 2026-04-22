@@ -326,6 +326,11 @@ export async function registerRoutes(httpServer: Server, app: Express) {
     })();
   });
 
+  // Version / health probe
+  app.get("/api/version", (_req, res) => {
+    res.json({ version: "1aa4a57", engine: "pymupdf" });
+  });
+
   // Poll bid status
   app.get("/api/bids/:id/status", (req, res) => {
     const bid = storage.getBid(Number(req.params.id));
