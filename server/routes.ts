@@ -4,6 +4,8 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import os from "os";
+import https from "https";
+import http from "http";
 import { spawn } from "child_process";
 import nodemailer from "nodemailer";
 import { storage } from "./storage";
@@ -17,6 +19,54 @@ function getTransporter() {
       user: process.env.GMAIL_USER || "Office@RebarConcreteProducts.com",
       pass: process.env.GMAIL_APP_PASSWORD || "",
     },
+  });
+}
+
+// ── URL DOWNLOADER ──────────────────────────────────────────────────────────
+function normalizeUrl(url: string): string {
+  // Google Drive: convert share URL to direct download
+  const gdrive = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+  if (gdrive) {
+    return `https://drive.google.com/uc?export=download&id=${gdrive[1]}`;
+  }
+  // Dropbox: force direct download
+  if (url.includes('dropbox.com')) {
+    return url.replace(/[?&]dl=0/, '').replace(/[?&]dl=1/, '') +
+      (url.includes('?') ? '&dl=1' : '?dl=1');
+  }
+  return url;
+}
+
+function downloadPdf(url: string, destPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const normalized = normalizeUrl(url);
+    const protocol = normalized.startsWith('https') ? https : http;
+
+    const doRequest = (requestUrl: string, redirectCount = 0) => {
+      if (redirectCount > 5) return reject(new Error('Too many redirects'));
+      protocol.get(requestUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
+        // Follow redirects
+        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          const redirectUrl = res.headers.location;
+          const redirectProtocol = redirectUrl.startsWith('https') ? https : http;
+          redirectProtocol.get(redirectUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res2) => {
+            if (res2.statusCode !== 200) return reject(new Error(`Download failed: HTTP ${res2.statusCode}`));
+            const file = fs.createWriteStream(destPath);
+            res2.pipe(file);
+            file.on('finish', () => file.close(() => resolve()));
+            file.on('error', reject);
+          }).on('error', reject);
+          return;
+        }
+        if (res.statusCode !== 200) return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+        const file = fs.createWriteStream(destPath);
+        res.pipe(file);
+        file.on('finish', () => file.close(() => resolve()));
+        file.on('error', reject);
+      }).on('error', reject);
+    };
+
+    doRequest(normalized);
   });
 }
 
@@ -147,13 +197,13 @@ async function sendBidEmails(
 export async function registerRoutes(httpServer: Server, app: Express) {
   // Submit plan for bid
   app.post("/api/bids", upload.single("planFile"), async (req, res) => {
-    const { customerName, customerEmail, customerPhone, projectName } = req.body;
+    const { customerName, customerEmail, customerPhone, projectName, planUrl } = req.body;
 
     if (!customerName || !customerEmail || !customerPhone) {
       return res.status(400).json({ error: "Name, email, and phone are required" });
     }
-    if (!req.file) {
-      return res.status(400).json({ error: "A PDF plan file is required" });
+    if (!req.file && !planUrl) {
+      return res.status(400).json({ error: "A PDF plan file or link is required" });
     }
 
     const bid = storage.createBid({
@@ -161,7 +211,7 @@ export async function registerRoutes(httpServer: Server, app: Express) {
       customerEmail,
       customerPhone,
       projectName: projectName || "",
-      originalFilename: req.file.originalname,
+      originalFilename: req.file?.originalname || planUrl || "plan-link",
       createdAt: new Date().toISOString(),
     });
 
@@ -177,8 +227,25 @@ export async function registerRoutes(httpServer: Server, app: Express) {
 
       storage.updateBidStatus(bid.id, "processing", "Running AI plan takeoff...");
 
+      // If URL provided, download it first
+      let inputPdfPath = req.file?.path || "";
+      let downloadedTemp = false;
+      if (planUrl && !req.file) {
+        const tmpPdf = path.join(os.tmpdir(), `rcp_download_${bid.id}_${Date.now()}.pdf`);
+        try {
+          storage.updateBidStatus(bid.id, "processing", "Downloading plan from link...");
+          await downloadPdf(planUrl, tmpPdf);
+          inputPdfPath = tmpPdf;
+          downloadedTemp = true;
+        } catch (dlErr: any) {
+          storage.updateBidStatus(bid.id, "failed",
+            `Could not download the plan from the provided link: ${dlErr.message}. Please check the sharing settings and try again.`);
+          return;
+        }
+      }
+
       const result = await runTakeoff(
-        req.file!.path,
+        inputPdfPath,
         outputPdf,
         customerName,
         projectName || "",
@@ -189,8 +256,9 @@ export async function registerRoutes(httpServer: Server, app: Express) {
         }
       );
 
-      // Clean up uploaded file
-      try { fs.unlinkSync(req.file!.path); } catch {}
+      // Clean up uploaded/downloaded file
+      try { if (req.file?.path) fs.unlinkSync(req.file.path); } catch {}
+      try { if (downloadedTemp && inputPdfPath) fs.unlinkSync(inputPdfPath); } catch {}
 
       if (!result.success || !result.pdfPath) {
         storage.updateBidStatus(bid.id, "failed",

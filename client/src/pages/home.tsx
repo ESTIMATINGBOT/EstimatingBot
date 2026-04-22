@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Upload, FileText, Phone, Mail, User, Building2,
-  CheckCircle2, ArrowRight, Clock, Truck, Award
+  CheckCircle2, ArrowRight, Clock, Truck, Award, Link
 } from "lucide-react";
 
 export default function HomePage() {
@@ -24,6 +24,8 @@ export default function HomePage() {
     projectName: "",
   });
   const [file, setFile] = useState<File | null>(null);
+  const [planUrl, setPlanUrl] = useState("");
+  const [inputMode, setInputMode] = useState<"upload" | "link">("upload");
   const [dragOver, setDragOver] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -57,7 +59,9 @@ export default function HomePage() {
     if (!form.customerEmail.trim()) errs.customerEmail = "Email is required";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail)) errs.customerEmail = "Valid email required";
     if (!form.customerPhone.trim()) errs.customerPhone = "Phone is required";
-    if (!file) errs.file = "Please upload your plan PDF";
+    if (inputMode === "upload" && !file) errs.file = "Please upload your plan PDF";
+    if (inputMode === "link" && !planUrl.trim()) errs.file = "Please paste a Google Drive or Dropbox link";
+    if (inputMode === "link" && planUrl.trim() && !/^https?:\/\//i.test(planUrl)) errs.file = "Please enter a valid URL starting with https://";
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -70,9 +74,15 @@ export default function HomePage() {
       data.append("customerEmail", form.customerEmail);
       data.append("customerPhone", form.customerPhone);
       data.append("projectName", form.projectName);
-      data.append("planFile", file!);
 
-      const res = await fetch("/api/bids", { method: "POST", body: data });
+      if (inputMode === "link") {
+        data.append("planUrl", planUrl.trim());
+      } else {
+        data.append("planFile", file!);
+      }
+
+      const base = "__PORT_5000__".startsWith("__") ? "https://estimatingbot-production.up.railway.app" : "__PORT_5000__";
+      const res = await fetch(`${base}/api/bids`, { method: "POST", body: data });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Submission failed");
@@ -247,50 +257,101 @@ export default function HomePage() {
                   />
                 </div>
 
-                {/* File upload */}
-                <div className="space-y-1.5">
+                {/* Plan input — toggle between upload and link */}
+                <div className="space-y-2">
                   <Label className="flex items-center gap-1.5 text-sm font-medium">
                     <FileText className="w-3.5 h-3.5 text-muted-foreground" />
-                    Plan PDF <span className="text-destructive">*</span>
+                    Plan <span className="text-destructive">*</span>
                   </Label>
 
-                  <div
-                    data-testid="drop-zone"
-                    className={`drop-zone cursor-pointer p-6 text-center ${dragOver ? "drag-over" : ""} ${errors.file ? "border-destructive" : ""}`}
-                    onDrop={onDrop}
-                    onDragOver={onDragOver}
-                    onDragLeave={onDragLeave}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="application/pdf"
-                      className="hidden"
-                      data-testid="input-file"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) { handleFile(f); setErrors(prev => ({ ...prev, file: "" })); }
-                      }}
-                    />
-                    {file ? (
-                      <div className="flex items-center justify-center gap-3">
-                        <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
-                        <div className="text-left">
-                          <p className="font-medium text-sm truncate max-w-xs">{file.name}</p>
-                          <p className="text-muted-foreground text-xs">
-                            {(file.size / 1024 / 1024).toFixed(2)} MB — click to change
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center gap-2">
-                        <Upload className="w-8 h-8 text-muted-foreground" />
-                        <p className="font-medium text-sm">Drop PDF here or click to browse</p>
-                        <p className="text-muted-foreground text-xs">PDF up to 50 MB</p>
-                      </div>
-                    )}
+                  {/* Mode toggle */}
+                  <div className="flex rounded-lg border border-border overflow-hidden text-sm font-medium">
+                    <button
+                      type="button"
+                      data-testid="tab-upload"
+                      onClick={() => { setInputMode("upload"); setErrors(prev => ({ ...prev, file: "" })); }}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 transition-colors ${
+                        inputMode === "upload"
+                          ? "bg-black text-white"
+                          : "bg-muted/40 text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Upload className="w-3.5 h-3.5" /> Upload PDF
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="tab-link"
+                      onClick={() => { setInputMode("link"); setErrors(prev => ({ ...prev, file: "" })); }}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 transition-colors ${
+                        inputMode === "link"
+                          ? "bg-black text-white"
+                          : "bg-muted/40 text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Link className="w-3.5 h-3.5" /> Paste Link
+                    </button>
                   </div>
+
+                  {/* Upload mode */}
+                  {inputMode === "upload" && (
+                    <div
+                      data-testid="drop-zone"
+                      className={`drop-zone cursor-pointer p-6 text-center ${dragOver ? "drag-over" : ""} ${errors.file ? "border-destructive" : ""}`}
+                      onDrop={onDrop}
+                      onDragOver={onDragOver}
+                      onDragLeave={onDragLeave}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="application/pdf"
+                        className="hidden"
+                        data-testid="input-file"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) { handleFile(f); setErrors(prev => ({ ...prev, file: "" })); }
+                        }}
+                      />
+                      {file ? (
+                        <div className="flex items-center justify-center gap-3">
+                          <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
+                          <div className="text-left">
+                            <p className="font-medium text-sm truncate max-w-xs">{file.name}</p>
+                            <p className="text-muted-foreground text-xs">
+                              {(file.size / 1024 / 1024).toFixed(2)} MB — click to change
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-2">
+                          <Upload className="w-8 h-8 text-muted-foreground" />
+                          <p className="font-medium text-sm">Drop PDF here or click to browse</p>
+                          <p className="text-muted-foreground text-xs">PDF up to 50 MB</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Link mode */}
+                  {inputMode === "link" && (
+                    <div className="space-y-2">
+                      <Input
+                        data-testid="input-plan-url"
+                        type="url"
+                        placeholder="https://drive.google.com/file/d/... or https://dropbox.com/s/..."
+                        value={planUrl}
+                        onChange={(e) => { setPlanUrl(e.target.value); setErrors(prev => ({ ...prev, file: "" })); }}
+                        className={errors.file ? "border-destructive" : ""}
+                      />
+                      <div className="bg-muted/50 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
+                        <p className="font-medium text-foreground">Sharing tips:</p>
+                        <p><span className="font-medium">Google Drive:</span> Set to "Anyone with the link can view"</p>
+                        <p><span className="font-medium">Dropbox:</span> Change <code>?dl=0</code> to <code>?dl=1</code> at the end of the URL</p>
+                      </div>
+                    </div>
+                  )}
+
                   {errors.file && (
                     <p className="text-destructive text-xs">{errors.file}</p>
                   )}
