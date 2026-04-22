@@ -104,7 +104,7 @@ function runTakeoff(
     }
     const proc = spawn(python3Bin, args, {
       env: { ...process.env, ...env },
-      timeout: 300_000,  // 5 min — large plan sets need time for text scoring + rendering
+      timeout: 600_000,  // 10 min — large plan sets: 145MB download + render 142 pages + 10 Claude batches
     });
 
     let stdout = "";
@@ -255,6 +255,7 @@ export async function registerRoutes(httpServer: Server, app: Express) {
           await downloadPdf(planUrl, tmpPdf);
           inputPdfPath = tmpPdf;
           downloadedTemp = true;
+          storage.updateBidStatus(bid.id, "processing", "Plans downloaded — running takeoff (this takes 3–8 min for large plan sets)...");
         } catch (dlErr: any) {
           storage.updateBidStatus(bid.id, "failed",
             `Could not download the plan from the provided link: ${dlErr.message}. Please check the sharing settings and try again.`);
