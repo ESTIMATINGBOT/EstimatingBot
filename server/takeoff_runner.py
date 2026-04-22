@@ -534,7 +534,7 @@ def generate_bid_pdf(takeoff, prices, output_path, customer_name, project_name, 
         ps('disc',7,False,MID_GRAY)))
 
     doc.build(story, onFirstPage=header_footer, onLaterPages=header_footer)
-    return True
+    return grand_total
 
 def takeout_safe(d, key, default=""):
     v = d.get(key, default)
@@ -598,13 +598,14 @@ def main():
 
         # Generate PDF
         try:
-            generate_bid_pdf(takeoff, prices, output_pdf, customer, proj_name, bid_date)
+            grand_total = generate_bid_pdf(takeoff, prices, output_pdf, customer, proj_name, bid_date)
             print(json.dumps({
                 "success": True,
                 "pdfPath": output_pdf,
                 "projectName": proj_name,
                 "projectAddress": takeoff.get("project_address", ""),
                 "barCount": len(takeoff.get("bars", [])),
+                "grandTotal": round(grand_total, 2) if grand_total else 0,
                 "warning": error_msg or ""
             }))
         except Exception as e:

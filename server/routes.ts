@@ -91,7 +91,7 @@ function runTakeoff(
   projectName: string,
   bidDate: string,
   env: NodeJS.ProcessEnv
-): Promise<{ success: boolean; pdfPath?: string; projectName?: string; warning?: string; error?: string }> {
+): Promise<{ success: boolean; pdfPath?: string; projectName?: string; grandTotal?: number; warning?: string; error?: string }> {
   return new Promise((resolve) => {
     const scriptPath = path.join(__dirname, "takeoff_runner.py");
     const args = [scriptPath, inputPdf, outputPdf, customerName, projectName, bidDate];
@@ -301,6 +301,7 @@ export async function registerRoutes(httpServer: Server, app: Express) {
       }
 
       // Send emails
+      const grandTotalStr = result.grandTotal ? `$${result.grandTotal.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}` : "";
       try {
         await sendBidEmails(
           result.pdfPath!,
@@ -310,10 +311,10 @@ export async function registerRoutes(httpServer: Server, app: Express) {
           result.projectName || projectName || "Your Project"
         );
         storage.updateBidStatus(bid.id, "complete",
-          "Estimate sent to your email!", result.pdfPath);
+          `Estimate sent to your email!${grandTotalStr ? ` Grand total: ${grandTotalStr}` : ""}`, result.pdfPath);
       } catch (emailErr: any) {
         storage.updateBidStatus(bid.id, "complete",
-          "Estimate generated but email delivery failed. Please contact us directly.",
+          `Estimate generated but email delivery failed. Please contact us directly.${grandTotalStr ? ` Grand total: ${grandTotalStr}` : ""}`,
           result.pdfPath);
       }
 
