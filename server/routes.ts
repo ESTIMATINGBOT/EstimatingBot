@@ -73,7 +73,7 @@ function downloadPdf(url: string, destPath: string): Promise<void> {
 // ── MULTER (file upload) ─────────────────────────────────────────────────────
 const upload = multer({
   dest: os.tmpdir(),
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB — large plan sets can exceed 100MB
   fileFilter: (_req, file, cb) => {
     if (file.mimetype === "application/pdf") {
       cb(null, true);

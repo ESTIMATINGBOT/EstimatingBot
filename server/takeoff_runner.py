@@ -89,22 +89,180 @@ def get_page_count(pdf_path):
         pass
     return 0
 
-def render_all_pages(pdf_path, tmpdir, dpi=75):
-    """Render every page of the PDF at the given DPI. Returns sorted list of image paths."""
-    try:
-        subprocess.run(
-            ["pdftoppm", "-r", str(dpi), "-png", pdf_path, os.path.join(tmpdir, "page")],
-            capture_output=True, timeout=480  # up to 8 min for large PDFs
-        )
-    except Exception as e:
-        return [], str(e)
+# ── STRUCTURAL KEYWORDS (for text-based pre-filter) ──────────────────────────
+STRUCTURAL_KEYWORDS = [
+    r'#[3-9]\b', r'#1[0-9]\b',
+    r'\brebar\b', r'\breinf', r'\bbar\b',
+    r'\bfooting', r'\bfoundation', r'\bslab',
+    r'\bstem\s*wall', r'\bgrade\s*beam', r'\bpier',
+    r'\bstirrup', r'\bcontinuous', r'\bew\b', r'\bo\.c\.', r'\boc\b',
+    r'\bmat\b', r'\bdowel', r'\bhook',
+    r'\blap\b', r'\bsplice',
+    r'#3@', r'#4@', r'#5@', r'#6@',
+    r'\bS[0-9]',        # structural sheet designators (S1, S2, ...)
+    r'\bSTR\b',         # "STR" abbreviation
+    r'\bconcrete\b', r'\bcmu\b', r'\bicf\b',
+    r'\blintel\b', r'\bbearing\b', r'\bshear\b',
+    r'\bcolumn\b', r'\bbeam\b', r'\bwall\b',
+    r'\btypical\b', r'\btyp\.\b',
+]
 
-    images = sorted([
-        os.path.join(tmpdir, f)
-        for f in os.listdir(tmpdir)
-        if f.startswith("page") and f.endswith(".png")
-    ])
-    return images, None
+# Pages that are always useful regardless of keyword score
+ALWAYS_INCLUDE_FIRST_N = 5   # cover, index, general notes
+# After text scoring, keep this many neighbours around each hit page
+NEIGHBOUR_RADIUS = 1
+# Hard cap on rendered pages regardless of PDF size — keeps runtime bounded
+# 150 covers typical large residential sets (100-150 pages) without filtering
+# Plans above 150 pages get smart-filtered: text hits + neighbours + even sample
+MAX_RENDER_PAGES = 150
+
+def score_pages_by_text(pdf_path, total_pages):
+    """
+    Use pdftotext to extract text from all pages and score each by structural
+    keyword hits. Fast — pure text extraction, no image rendering.
+    Returns dict of {page_num (1-based): score}.
+    Image-only pages score 0 but are still candidates via neighbour expansion.
+    """
+    scores = {}
+    try:
+        r = subprocess.run(
+            ["pdftotext", "-layout", pdf_path, "-"],
+            capture_output=True, text=True, timeout=120
+        )
+        pages_text = r.stdout.split("\x0c")  # form-feed separates pages
+        for i, text in enumerate(pages_text):
+            pg = i + 1
+            if pg > total_pages:
+                break
+            t = text.lower()
+            score = sum(len(re.findall(kw, t, re.IGNORECASE)) for kw in STRUCTURAL_KEYWORDS)
+            scores[pg] = score
+    except Exception:
+        pass
+    # Fill in 0 for any pages pdftotext missed
+    for pg in range(1, total_pages + 1):
+        scores.setdefault(pg, 0)
+    return scores
+
+def select_pages_to_render(total_pages, scores):
+    """
+    Given page scores, return a sorted list of page numbers to render.
+    Strategy:
+      1. Always include first ALWAYS_INCLUDE_FIRST_N pages (cover/index/notes)
+      2. Include all pages with score > 0
+      3. Expand each hit page by NEIGHBOUR_RADIUS (catches image-only detail pages
+         that sit next to a text page that names the detail)
+      4. If total is still under MAX_RENDER_PAGES / 2, include all pages
+         (small plan sets — just render everything)
+      5. Cap at MAX_RENDER_PAGES
+    """
+    # For small plan sets, render everything — no filtering needed
+    if total_pages <= MAX_RENDER_PAGES:
+        return list(range(1, total_pages + 1))
+
+    selected = set(range(1, min(ALWAYS_INCLUDE_FIRST_N + 1, total_pages + 1)))
+
+    # Add hit pages and their neighbours
+    hit_pages = {pg for pg, sc in scores.items() if sc > 0}
+    for pg in hit_pages:
+        for offset in range(-NEIGHBOUR_RADIUS, NEIGHBOUR_RADIUS + 1):
+            neighbour = pg + offset
+            if 1 <= neighbour <= total_pages:
+                selected.add(neighbour)
+
+    # If we still have budget after text hits, fill with evenly-spaced pages
+    # (catches image-only structural sheets that have zero extractable text)
+    if len(selected) < MAX_RENDER_PAGES:
+        budget = MAX_RENDER_PAGES - len(selected)
+        all_pages = list(range(1, total_pages + 1))
+        # Sample remaining pages evenly
+        remaining = [pg for pg in all_pages if pg not in selected]
+        step = max(1, len(remaining) // budget)
+        sampled = remaining[::step][:budget]
+        selected.update(sampled)
+
+    result = sorted(selected)[:MAX_RENDER_PAGES]
+    return result
+
+def render_pages(pdf_path, tmpdir, page_numbers, dpi=75):
+    """Render specific pages of a PDF to PNG. Returns sorted list of image paths."""
+    images = []
+    for pg in page_numbers:
+        prefix = os.path.join(tmpdir, f"pg{pg:04d}")
+        try:
+            subprocess.run(
+                ["pdftoppm", "-r", str(dpi), "-png",
+                 "-f", str(pg), "-l", str(pg), pdf_path, prefix],
+                capture_output=True, timeout=30
+            )
+            matches = sorted([
+                os.path.join(tmpdir, f)
+                for f in os.listdir(tmpdir)
+                if f.startswith(f"pg{pg:04d}") and f.endswith(".png")
+            ])
+            images.extend(matches)
+        except Exception:
+            pass
+    return images
+
+def render_all_pages(pdf_path, tmpdir, dpi=75):
+    """
+    Smart render: score all pages by text content, select up to MAX_RENDER_PAGES
+    relevant pages (with neighbour expansion for image-only pages), then render
+    only those. For PDFs under MAX_RENDER_PAGES pages, renders everything.
+    Returns (sorted image paths, metadata_dict or None).
+    """
+    total = get_page_count(pdf_path)
+    if not total:
+        # Can't get count — try rendering all with a time cap
+        try:
+            subprocess.run(
+                ["pdftoppm", "-r", str(dpi), "-png", pdf_path,
+                 os.path.join(tmpdir, "page")],
+                capture_output=True, timeout=480
+            )
+        except Exception as e:
+            return [], str(e)
+        images = sorted([
+            os.path.join(tmpdir, f)
+            for f in os.listdir(tmpdir)
+            if f.startswith("page") and f.endswith(".png")
+        ])
+        return images, None
+
+    # Score pages by extractable text (fast, < 5 sec even for 500-page PDFs)
+    scores = score_pages_by_text(pdf_path, total)
+    pages_to_render = select_pages_to_render(total, scores)
+
+    text_hits = sum(1 for sc in scores.values() if sc > 0)
+    filtered = len(pages_to_render) < total
+
+    # Render selected pages
+    if filtered:
+        images = render_pages(pdf_path, tmpdir, pages_to_render, dpi=dpi)
+    else:
+        # Small plan set — render all at once (faster than one-by-one)
+        try:
+            subprocess.run(
+                ["pdftoppm", "-r", str(dpi), "-png", pdf_path,
+                 os.path.join(tmpdir, "page")],
+                capture_output=True, timeout=480
+            )
+            images = sorted([
+                os.path.join(tmpdir, f)
+                for f in os.listdir(tmpdir)
+                if f.startswith("page") and f.endswith(".png")
+            ])
+        except Exception as e:
+            return [], str(e)
+
+    meta = {
+        "total_pages": total,
+        "text_hit_pages": text_hits,
+        "rendered_pages": len(images),
+        "filtered": filtered,
+    }
+    return images, meta
 
 # ── CLAUDE TAKEOFF ────────────────────────────────────────────────────────────
 TAKEOFF_SYSTEM_BASE = """You are an expert rebar takeoff estimator for Rebar Concrete Products in McKinney, TX.
@@ -362,10 +520,21 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
     if not total:
         return None, "Could not determine page count"
 
-    # Step 1: Render all pages
-    all_images, render_err = render_all_pages(pdf_path, tmpdir, dpi=dpi)
+    # Step 1: Smart render — scores pages by text, renders up to MAX_RENDER_PAGES
+    all_images, render_meta = render_all_pages(pdf_path, tmpdir, dpi=dpi)
     if not all_images:
-        return None, f"Render failed: {render_err}"
+        return None, f"Render failed: no pages produced"
+
+    # Build a human-readable render summary for the notes field
+    if isinstance(render_meta, dict):
+        render_note = (
+            f"[Pages: {render_meta['total_pages']} total, "
+            f"{render_meta['rendered_pages']} rendered"
+            + (f", {render_meta['text_hit_pages']} text hits" if render_meta['filtered'] else ", all pages rendered")
+            + "]"
+        )
+    else:
+        render_note = ""
 
     # Step 2: Detect repeating unit count from cover pages
     unit_count = detect_unit_count(all_images)
@@ -422,8 +591,9 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
         return None, err_summary
 
     merged = merge_takeoffs(all_results)
-    # Embed unit count in notes for reference
-    merged["notes"] = (f"[Unit count detected: {unit_count}] " + merged.get("notes", "")).strip()
+    # Embed pipeline metadata in notes for traceability
+    meta_prefix = " ".join(filter(None, [render_note, f"[Units: {unit_count}]"]))
+    merged["notes"] = (meta_prefix + " " + merged.get("notes", "")).strip()
     return merged, None
 
 
