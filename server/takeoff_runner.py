@@ -228,6 +228,118 @@ CRITICAL RULES:
 - If poly not called out, set poly_rolls to 0
 - Return ONLY valid JSON, no markdown fences"""
 
+def merge_takeoffs(results):
+    """Merge multiple Claude takeoff results from different page batches into one."""
+    if not results:
+        return None
+    merged = {
+        "project_name": "",
+        "project_address": "",
+        "bars": [],
+        "dobies_qty": 0,
+        "poly_rolls": 0,
+        "poly_tape_rolls": 0,
+        "tie_wire_rolls": 0,
+        "stake_packs": 0,
+        "notes": ""
+    }
+    for r in results:
+        if not merged["project_name"] and r.get("project_name"):
+            merged["project_name"] = r["project_name"]
+        if not merged["project_address"] and r.get("project_address"):
+            merged["project_address"] = r["project_address"]
+        merged["bars"].extend(r.get("bars") or [])
+        merged["dobies_qty"]      += int(r.get("dobies_qty") or 0)
+        merged["poly_rolls"]      += int(r.get("poly_rolls") or 0)
+        merged["poly_tape_rolls"] += int(r.get("poly_tape_rolls") or 0)
+        merged["tie_wire_rolls"]  += int(r.get("tie_wire_rolls") or 0)
+        merged["stake_packs"]     += int(r.get("stake_packs") or 0)
+        if r.get("notes"):
+            merged["notes"] = (merged["notes"] + " " + r["notes"]).strip()
+    return merged
+
+
+def claude_takeoff_batch(image_paths, batch_label=""):
+    """Send one batch of page images to Claude and return takeoff JSON."""
+    if not ANTHROPIC_API_KEY:
+        return None, "No ANTHROPIC_API_KEY set"
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        content = []
+        total_bytes = 0
+        MAX_PAYLOAD = 18 * 1024 * 1024
+        for img_path in image_paths:
+            with open(img_path, "rb") as f:
+                raw = f.read()
+            b64 = base64.standard_b64encode(raw).decode("utf-8")
+            total_bytes += len(b64)
+            if total_bytes > MAX_PAYLOAD:
+                break
+            content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}})
+        content.append({"type": "text", "text": f"These are plan pages {batch_label}. Analyze ALL rebar shown and return the JSON takeoff. If no structural/rebar content is visible on these pages, return an empty bars array with dobies_qty=0 and all accessory counts=0."})
+        msg = client.messages.create(
+            model="claude-opus-4-5",
+            max_tokens=8192,
+            system=TAKEOFF_SYSTEM,
+            messages=[{"role": "user", "content": content}]
+        )
+        raw_txt = msg.content[0].text.strip()
+        raw_txt = re.sub(r'^```(?:json)?\s*', '', raw_txt)
+        raw_txt = re.sub(r'\s*```$', '', raw_txt)
+        return json.loads(raw_txt), None
+    except Exception as e:
+        return None, str(e)
+
+
+def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=50, batch_size=15):
+    """Render ALL pages at low DPI, process in batches, merge results."""
+    total = get_page_count(pdf_path)
+    if not total:
+        return None, "Could not determine page count"
+
+    # Render all pages at low DPI
+    try:
+        subprocess.run(
+            ["pdftoppm", "-r", str(dpi), "-png", pdf_path, os.path.join(tmpdir, "page")],
+            capture_output=True, timeout=300
+        )
+    except Exception as e:
+        return None, f"Render failed: {e}"
+
+    all_images = sorted([
+        os.path.join(tmpdir, f)
+        for f in os.listdir(tmpdir)
+        if f.startswith("page") and f.endswith(".png")
+    ])
+
+    if not all_images:
+        return None, "No pages rendered"
+
+    # Split into batches and run Claude on each
+    batches = [all_images[i:i+batch_size] for i in range(0, len(all_images), batch_size)]
+    results = []
+    errors = []
+    for i, batch in enumerate(batches):
+        start_pg = i * batch_size + 1
+        end_pg = min(start_pg + batch_size - 1, total)
+        label = f"pages {start_pg}–{end_pg} of {total}"
+        result, err = claude_takeoff_batch(batch, label)
+        if result:
+            # Only keep batches that actually found rebar
+            if result.get("bars") or result.get("dobies_qty", 0) > 0:
+                results.append(result)
+        elif err:
+            errors.append(f"Batch {i+1}: {err}")
+
+    if not results:
+        err_summary = "; ".join(errors) if errors else "No rebar found in any page batch"
+        return None, err_summary
+
+    merged = merge_takeoffs(results)
+    return merged, None
+
+
 def claude_takeoff_pdf(pdf_path):
     """Send the PDF directly to Claude as a native document block — same as when user sends PDF in chat.
     Claude reads ALL pages internally; no image conversion needed."""
@@ -703,20 +815,17 @@ def main():
 
     error_msg = None
 
-    # PRIMARY: Send PDF directly to Claude as a document block (reads all pages natively)
-    takeoff, error_msg = claude_takeoff_pdf(input_pdf)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # PRIMARY: Render ALL pages at 50 DPI, batch through Claude 15 pages at a time
+        # This sees every page visually — same as sending the PDF directly in chat
+        takeoff, error_msg = claude_takeoff_all_pages(input_pdf, tmpdir, dpi=50, batch_size=15)
 
-    # FALLBACK: If native PDF fails, convert to images and try again
-    if not takeoff:
-        pdf_error = error_msg
-        with tempfile.TemporaryDirectory() as tmpdir:
-            images = pdf_to_images(input_pdf, tmpdir)
-            if images:
-                takeoff, error_msg = claude_takeoff(images)
-                if error_msg:
-                    error_msg = f"PDF method: {pdf_error} | Image method: {error_msg}"
-            else:
-                error_msg = pdf_error or "Could not process plan."
+        # FALLBACK: Try native PDF document block if batched images failed
+        if not takeoff:
+            batch_error = error_msg
+            takeoff, error_msg = claude_takeoff_pdf(input_pdf)
+            if not takeoff:
+                error_msg = f"Batch: {batch_error} | PDF: {error_msg}"
 
     if not takeoff:
         takeoff = {
