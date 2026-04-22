@@ -322,7 +322,7 @@ export async function registerRoutes(httpServer: Server, app: Express) {
       // Clean up PDF after sending
       setTimeout(() => {
         try { fs.unlinkSync(result.pdfPath!); } catch {}
-      }, 60_000);
+      }, 300_000); // 5 min window to download via /api/bids/:id/download
     })();
   });
 
@@ -334,5 +334,20 @@ export async function registerRoutes(httpServer: Server, app: Express) {
       status: bid.status,
       message: bid.statusMessage,
     });
+  });
+
+  // Download estimate PDF (available for 60s after completion)
+  app.get("/api/bids/:id/download", (req, res) => {
+    const bid = storage.getBid(Number(req.params.id));
+    if (!bid) return res.status(404).json({ error: "Not found" });
+    if (bid.status !== "complete") return res.status(400).json({ error: "Not ready" });
+    const pdfPath = bid.pdfPath;
+    if (!pdfPath || !fs.existsSync(pdfPath)) {
+      return res.status(410).json({ error: "PDF has already been cleaned up — check your email" });
+    }
+    const filename = path.basename(pdfPath);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    fs.createReadStream(pdfPath).pipe(res);
   });
 }
