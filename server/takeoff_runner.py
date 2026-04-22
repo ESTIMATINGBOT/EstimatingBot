@@ -107,15 +107,15 @@ def render_all_pages(pdf_path, tmpdir, dpi=75):
     return images, None
 
 # ── CLAUDE TAKEOFF ────────────────────────────────────────────────────────────
-TAKEOFF_SYSTEM = """You are an expert rebar takeoff estimator for Rebar Concrete Products in McKinney, TX.
+TAKEOFF_SYSTEM_BASE = """You are an expert rebar takeoff estimator for Rebar Concrete Products in McKinney, TX.
 Analyze the structural/concrete plan images and extract ALL rebar information.
 
 Return a JSON object with this exact structure:
-{
+{{
   "project_name": "Name from plans or 'Custom Project'",
   "project_address": "Address if shown, else ''",
   "bars": [
-    {
+    {{
       "mark": "A",
       "size": "#4",
       "length_ft": 20,
@@ -124,7 +124,7 @@ Return a JSON object with this exact structure:
       "description": "Slab mat 12\" O.C. E.W.",
       "is_fabricated": false,
       "weight_lbs": 167.0
-    }
+    }}
   ],
   "dobies_qty": 500,
   "poly_rolls": 1,
@@ -132,7 +132,7 @@ Return a JSON object with this exact structure:
   "tie_wire_rolls": 2,
   "stake_packs": 3,
   "notes": "Any important notes"
-}
+}}
 
 CRITICAL RULES:
 - Rebar weights per linear foot: #3=0.376, #4=0.668, #5=1.043, #6=1.502, #7=2.044, #8=2.670
@@ -148,10 +148,83 @@ CRITICAL RULES:
 - Be thorough — read every note, detail, section cut, and schedule on each page
 - If a page shows an ICF wall section, extract the vertical and horizontal rebar spacing and quantities
 - If a page shows a footing schedule, extract every footing size and its rebar
-- Do not skip partial or small details"""
+- Do not skip partial or small details
+{unit_count_rule}"""
 
-SECOND_PASS_SYSTEM = """You are an expert rebar takeoff estimator. This is a SECOND PASS on these plan pages — a previous scan found only a few items. Look more carefully.
+UNIT_COUNT_RULE_TEMPLATE = """
+UNIT REPETITION RULES — CRITICAL:
+- This plan set covers a project with {unit_count} repeating units (buildings/lots/cottages).
+- When you see a detail labeled "TYP.", "TYPICAL", "TYP. UNIT", or "SIM." (similar), the quantities shown are for ONE unit — you MUST multiply by {unit_count} to get the project total.
+- When a schedule lists a single building's rebar (e.g. one footing, one wall run, one slab), multiply ALL quantities from that schedule by {unit_count}.
+- Exception: if a page explicitly states "ALL UNITS", "PROJECT TOTAL", or shows all {unit_count} buildings at once, use the quantity as-is without multiplying.
+- Exception: site-only elements (dumpster enclosure, trellis, light poles, utility runs) are one-off — do NOT multiply those.
+- When in doubt, multiply. Under-counting by a factor of {unit_count} is the most common and most costly error."""
 
+NO_REPEAT_RULE = """
+UNIT REPETITION: This appears to be a single-building or non-repeating project. Report quantities exactly as shown on the plans."""
+
+def build_takeoff_system(unit_count):
+    """Build the system prompt with the correct unit-count multiplication rule."""
+    if unit_count and unit_count > 1:
+        rule = UNIT_COUNT_RULE_TEMPLATE.format(unit_count=unit_count)
+    else:
+        rule = NO_REPEAT_RULE
+    return TAKEOFF_SYSTEM_BASE.format(unit_count_rule=rule)
+
+
+# ── UNIT COUNT DETECTION ───────────────────────────────────────────────────────
+UNIT_COUNT_SYSTEM = """You are reading the cover sheet and index pages of a construction plan set.
+Your only job is to determine the total number of repeating units (buildings, lots, homes, cottages, units) in this project.
+
+Return JSON only, no markdown:
+{"unit_count": <integer>, "confidence": "high|medium|low", "evidence": "<one sentence explaining what you saw>"}
+
+Rules:
+- unit_count = 1 means a single custom building (no repetition)
+- Look for: "X-unit community", "X lots", "X buildings", "X homes", unit schedules, site plans showing multiple identical structures
+- If you see a site plan with N identical footprints, that is the unit count
+- If uncertain, return unit_count=1 with confidence=low"""
+
+def detect_unit_count(all_images):
+    """Send the first few pages to Claude to detect how many repeating units the project has."""
+    if not ANTHROPIC_API_KEY or not all_images:
+        return 1
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        # Use first 5 pages (cover, index, site plan usually there)
+        probe_pages = all_images[:5]
+        content = []
+        total_bytes = 0
+        for img_path in probe_pages:
+            with open(img_path, "rb") as f:
+                raw = f.read()
+            b64 = base64.standard_b64encode(raw).decode("utf-8")
+            total_bytes += len(b64)
+            if total_bytes > 10 * 1024 * 1024:  # 10 MB cap for probe
+                break
+            content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64}})
+        content.append({"type": "text", "text": "How many repeating units (buildings, homes, lots) does this project have? Return JSON only."})
+        msg = client.messages.create(
+            model="claude-opus-4-5",
+            max_tokens=256,
+            system=UNIT_COUNT_SYSTEM,
+            messages=[{"role": "user", "content": content}]
+        )
+        raw = msg.content[0].text.strip()
+        raw = re.sub(r'^```(?:json)?\s*', '', raw)
+        raw = re.sub(r'\s*```$', '', raw)
+        result = json.loads(raw)
+        count = int(result.get("unit_count", 1))
+        return max(1, count)
+    except Exception:
+        return 1  # safe default — no multiplication
+
+
+TAKEOFF_SYSTEM = None  # will be set dynamically after unit count detection
+
+SECOND_PASS_SYSTEM_BASE = """You are an expert rebar takeoff estimator. This is a SECOND PASS on these plan pages — a previous scan found only a few items. Look more carefully.
+{unit_count_rule}
 Examine every detail on these pages:
 - Look at ALL section cuts, elevation views, and detail bubbles
 - Check general notes for rebar specifications
@@ -164,7 +237,7 @@ Return the same JSON format as before. If you find the same bars as the first pa
 
 Return ONLY valid JSON, no markdown fences."""
 
-def claude_takeoff_batch(image_paths, batch_label="", second_pass=False):
+def claude_takeoff_batch(image_paths, batch_label="", second_pass=False, takeoff_system=None, second_pass_system=None):
     """Send one batch of page images to Claude and return takeoff JSON."""
     if not ANTHROPIC_API_KEY:
         return None, "No ANTHROPIC_API_KEY set"
@@ -190,15 +263,15 @@ def claude_takeoff_batch(image_paths, batch_label="", second_pass=False):
         if second_pass:
             content.append({
                 "type": "text",
-                "text": f"SECOND PASS — pages {batch_label}. The first pass found very few items. Look more carefully at every detail, note, and schedule. Extract ALL rebar shown. Return JSON takeoff."
+                "text": f"SECOND PASS — pages {batch_label}. The first pass found very few items. Look more carefully at every detail, note, and schedule. Remember to apply unit repetition multipliers per your instructions. Extract ALL rebar shown. Return JSON takeoff."
             })
-            system = SECOND_PASS_SYSTEM
+            system = second_pass_system or SECOND_PASS_SYSTEM_BASE.format(unit_count_rule="")
         else:
             content.append({
                 "type": "text",
-                "text": f"These are plan pages {batch_label}. Analyze ALL rebar shown and return the JSON takeoff. If no structural/rebar content is visible on these pages, return an empty bars array with dobies_qty=0 and all accessory counts=0."
+                "text": f"These are plan pages {batch_label}. Analyze ALL rebar shown and return the JSON takeoff. Apply unit repetition multipliers per your instructions. If no structural/rebar content is visible on these pages, return an empty bars array with dobies_qty=0 and all accessory counts=0."
             })
-            system = TAKEOFF_SYSTEM
+            system = takeoff_system or build_takeoff_system(1)
 
         msg = client.messages.create(
             model="claude-opus-4-5",
@@ -280,9 +353,10 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
     """
     Maximum-accuracy pipeline:
     1. Render ALL pages at 75 DPI
-    2. Batch 10 pages at a time through Claude
-    3. Re-run sparse batches (< 5 bars) as a second pass
-    4. Merge with smart deduplication
+    2. Detect unit count from cover/index pages (so TYP. details get multiplied correctly)
+    3. Batch 10 pages at a time through Claude with unit-aware system prompt
+    4. Re-run sparse batches (< 5 bars) as a second pass
+    5. Merge with smart deduplication
     """
     total = get_page_count(pdf_path)
     if not total:
@@ -293,7 +367,17 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
     if not all_images:
         return None, f"Render failed: {render_err}"
 
-    # Step 2: Split into batches and run first pass
+    # Step 2: Detect repeating unit count from cover pages
+    unit_count = detect_unit_count(all_images)
+
+    # Build system prompts with the detected unit count baked in
+    takeoff_system     = build_takeoff_system(unit_count)
+    second_pass_system = SECOND_PASS_SYSTEM_BASE.format(
+        unit_count_rule=UNIT_COUNT_RULE_TEMPLATE.format(unit_count=unit_count)
+        if unit_count > 1 else NO_REPEAT_RULE
+    )
+
+    # Step 3: Split into batches and run first pass
     batches = [all_images[i:i+batch_size] for i in range(0, len(all_images), batch_size)]
     first_pass_results = []
     sparse_batches = []   # batches that returned < 5 bars — worth a second look
@@ -302,9 +386,13 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
     for i, batch in enumerate(batches):
         start_pg = i * batch_size + 1
         end_pg = min(start_pg + batch_size - 1, total)
-        label = f"pages {start_pg}–{end_pg} of {total}"
+        label = f"pages {start_pg}–{end_pg} of {total} ({unit_count} units)"
 
-        result, err = claude_takeoff_batch(batch, label, second_pass=False)
+        result, err = claude_takeoff_batch(
+            batch, label, second_pass=False,
+            takeoff_system=takeoff_system,
+            second_pass_system=second_pass_system
+        )
         if result:
             bar_count = len(result.get("bars") or [])
             has_accessories = (result.get("dobies_qty", 0) > 0 or
@@ -317,10 +405,14 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
         elif err:
             errors.append(f"Batch {i+1} ({label}): {err}")
 
-    # Step 3: Second pass on sparse batches
+    # Step 4: Second pass on sparse batches
     second_pass_results = []
     for batch, label in sparse_batches:
-        result2, err2 = claude_takeoff_batch(batch, label, second_pass=True)
+        result2, err2 = claude_takeoff_batch(
+            batch, label, second_pass=True,
+            takeoff_system=takeoff_system,
+            second_pass_system=second_pass_system
+        )
         if result2 and result2.get("bars"):
             second_pass_results.append(result2)
 
@@ -330,6 +422,8 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
         return None, err_summary
 
     merged = merge_takeoffs(all_results)
+    # Embed unit count in notes for reference
+    merged["notes"] = (f"[Unit count detected: {unit_count}] " + merged.get("notes", "")).strip()
     return merged, None
 
 
