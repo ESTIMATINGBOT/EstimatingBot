@@ -1,10 +1,10 @@
 [phases.setup]
-nixPkgs = ["python3", "poppler"]
+nixPkgs = ["python3"]
 
 [phases.install]
 cmds = [
   "npm ci",
-  "python3 -m pip install --user anthropic reportlab pillow"
+  "python3 -m pip install --user anthropic reportlab pillow pymupdf pdfplumber pikepdf"
 ]
 
 [phases.build]
