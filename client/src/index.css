@@ -1,0 +1,153 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* RCP Brand Palette — Black/Lime/White industrial construction aesthetic */
+  :root {
+    /* Surfaces */
+    --background: 0 0% 98%;
+    --foreground: 0 0% 8%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 8%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 8%;
+
+    /* Primary = RCP Lime */
+    --primary: 68 100% 41%;
+    --primary-foreground: 0 0% 5%;
+
+    /* Secondary = charcoal */
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 0 0% 94%;
+    --muted-foreground: 0 0% 42%;
+
+    --accent: 68 100% 41%;
+    --accent-foreground: 0 0% 5%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 88%;
+    --input: 0 0% 88%;
+    --ring: 68 100% 41%;
+
+    --radius: 0.5rem;
+
+    /* Custom RCP tokens */
+    --rcp-lime: #C8D400;
+    --rcp-black: #000000;
+    --rcp-charcoal: #111111;
+    --rcp-olive: #5a6200;
+    --rcp-light: #f9f9f9;
+  }
+
+  .dark {
+    --background: 0 0% 5%;
+    --foreground: 0 0% 92%;
+    --card: 0 0% 8%;
+    --card-foreground: 0 0% 92%;
+    --popover: 0 0% 8%;
+    --popover-foreground: 0 0% 92%;
+    --primary: 68 100% 41%;
+    --primary-foreground: 0 0% 5%;
+    --secondary: 0 0% 18%;
+    --secondary-foreground: 0 0% 92%;
+    --muted: 0 0% 14%;
+    --muted-foreground: 0 0% 55%;
+    --accent: 68 100% 41%;
+    --accent-foreground: 0 0% 5%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+    --ring: 68 100% 41%;
+  }
+}
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'General Sans', 'Inter', sans-serif;
+    font-size: 1rem;
+    line-height: 1.6;
+    min-height: 100dvh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Cabinet Grotesk', 'General Sans', sans-serif;
+    font-weight: 700;
+    line-height: 1.15;
+    text-wrap: balance;
+  }
+
+  p, li { text-wrap: pretty; }
+
+  :focus-visible {
+    outline: 2px solid var(--rcp-lime);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: color-mix(in oklch, #C8D400 30%, transparent);
+  }
+}
+
+/* Transitions */
+@layer components {
+  a, button, [role="button"], input, select, textarea {
+    transition: color 180ms ease, background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0,0,0,0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  /* RCP lime accent bar */
+  .lime-stripe {
+    height: 3px;
+    background: var(--rcp-lime);
+    width: 100%;
+  }
+
+  /* Upload drop zone */
+  .drop-zone {
+    border: 2px dashed hsl(var(--border));
+    border-radius: 0.75rem;
+    transition: border-color 200ms ease, background 200ms ease;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--rcp-lime);
+    background: color-mix(in oklch, #C8D400 5%, transparent);
+  }
+
+  /* Status pill */
+  .status-pending   { @apply bg-yellow-50 text-yellow-700 border border-yellow-200; }
+  .status-processing { @apply bg-blue-50 text-blue-700 border border-blue-200; }
+  .status-complete  { @apply bg-green-50 text-green-700 border border-green-200; }
+  .status-failed    { @apply bg-red-50 text-red-700 border border-red-200; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
