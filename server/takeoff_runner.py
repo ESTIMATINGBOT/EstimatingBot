@@ -228,8 +228,55 @@ CRITICAL RULES:
 - If poly not called out, set poly_rolls to 0
 - Return ONLY valid JSON, no markdown fences"""
 
+def claude_takeoff_pdf(pdf_path):
+    """Send the PDF directly to Claude as a native document block — same as when user sends PDF in chat.
+    Claude reads ALL pages internally; no image conversion needed."""
+    if not ANTHROPIC_API_KEY:
+        return None, "No ANTHROPIC_API_KEY set"
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+        pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
+
+        # Claude document block — processes the full PDF natively
+        content = [
+            {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": pdf_b64
+                }
+            },
+            {
+                "type": "text",
+                "text": "Analyze ALL pages of this plan set. Find every page containing structural/concrete reinforcement details — foundation plans, slab plans, footing details, rebar schedules, beam and column reinforcement. Extract ALL rebar shown and return the JSON takeoff."
+            }
+        ]
+
+        msg = client.messages.create(
+            model="claude-opus-4-5",
+            max_tokens=8192,
+            system=TAKEOFF_SYSTEM,
+            messages=[{"role": "user", "content": content}]
+        )
+
+        raw = msg.content[0].text.strip()
+        raw = re.sub(r'^```(?:json)?\s*', '', raw)
+        raw = re.sub(r'\s*```$', '', raw)
+        data = json.loads(raw)
+        return data, None
+
+    except Exception as e:
+        return None, str(e)
+
+
 def claude_takeoff(image_paths):
-    """Send plan images to Claude for takeoff extraction."""
+    """Fallback: send rendered page images to Claude (used only if PDF method fails)."""
     if not ANTHROPIC_API_KEY:
         return None, "No ANTHROPIC_API_KEY set"
     
@@ -246,7 +293,7 @@ def claude_takeoff(image_paths):
             img_b64 = base64.standard_b64encode(raw_bytes).decode("utf-8")
             total_b64_bytes += len(img_b64)
             if total_b64_bytes > MAX_PAYLOAD:
-                break  # stop adding pages once payload limit reached
+                break
             content.append({
                 "type": "image",
                 "source": {"type": "base64", "media_type": "image/png", "data": img_b64}
@@ -265,10 +312,8 @@ def claude_takeoff(image_paths):
         )
         
         raw = msg.content[0].text.strip()
-        # Strip markdown fences if present
         raw = re.sub(r'^```(?:json)?\s*', '', raw)
         raw = re.sub(r'\s*```$', '', raw)
-        
         data = json.loads(raw)
         return data, None
         
@@ -656,58 +701,54 @@ def main():
     # Fetch QBO prices
     prices = fetch_qbo_prices()
 
-    # Render PDF to images
-    with tempfile.TemporaryDirectory() as tmpdir:
-        images = pdf_to_images(input_pdf, tmpdir)
+    error_msg = None
 
-        if not images:
-            # Can't render pages — build a placeholder bid
-            takeoff = {
-                "project_name": proj_name or "Custom Project",
-                "project_address": "",
-                "bars": [],
-                "dobies_qty": 0,
-                "poly_rolls": 0,
-                "poly_tape_rolls": 0,
-                "tie_wire_rolls": 0,
-                "stake_packs": 0,
-                "notes": "Plan could not be processed. Please contact Rebar Concrete Products for a manual takeoff."
-            }
-            error_msg = "Could not render plan pages. A manual takeoff is required."
-        else:
-            # Claude takeoff
-            takeoff, error_msg = claude_takeoff(images)
-            if not takeoff:
-                takeoff = {
-                    "project_name": proj_name or "Custom Project",
-                    "project_address": "",
-                    "bars": [],
-                    "dobies_qty": 0,
-                    "poly_rolls": 0,
-                    "poly_tape_rolls": 0,
-                    "tie_wire_rolls": 0,
-                    "stake_packs": 0,
-                    "notes": f"Automated takeoff failed: {error_msg}. Please contact RCP for a manual estimate."
-                }
+    # PRIMARY: Send PDF directly to Claude as a document block (reads all pages natively)
+    takeoff, error_msg = claude_takeoff_pdf(input_pdf)
 
-        if not proj_name:
-            proj_name = takeoff.get("project_name", "Custom Project")
+    # FALLBACK: If native PDF fails, convert to images and try again
+    if not takeoff:
+        pdf_error = error_msg
+        with tempfile.TemporaryDirectory() as tmpdir:
+            images = pdf_to_images(input_pdf, tmpdir)
+            if images:
+                takeoff, error_msg = claude_takeoff(images)
+                if error_msg:
+                    error_msg = f"PDF method: {pdf_error} | Image method: {error_msg}"
+            else:
+                error_msg = pdf_error or "Could not process plan."
 
-        # Generate PDF
-        try:
-            grand_total = generate_bid_pdf(takeoff, prices, output_pdf, customer, proj_name, bid_date)
-            print(json.dumps({
-                "success": True,
-                "pdfPath": output_pdf,
-                "projectName": proj_name,
-                "projectAddress": takeoff.get("project_address", ""),
-                "barCount": len(takeoff.get("bars", [])),
-                "grandTotal": round(grand_total, 2) if grand_total else 0,
-                "warning": error_msg or ""
-            }))
-        except Exception as e:
-            print(json.dumps({"success": False, "error": f"PDF generation failed: {str(e)}"}))
-            sys.exit(1)
+    if not takeoff:
+        takeoff = {
+            "project_name": proj_name or "Custom Project",
+            "project_address": "",
+            "bars": [],
+            "dobies_qty": 0,
+            "poly_rolls": 0,
+            "poly_tape_rolls": 0,
+            "tie_wire_rolls": 0,
+            "stake_packs": 0,
+            "notes": f"Automated takeoff failed: {error_msg}. Please contact RCP for a manual estimate."
+        }
+
+    if not proj_name:
+        proj_name = takeoff.get("project_name", "Custom Project")
+
+    # Generate PDF
+    try:
+        grand_total = generate_bid_pdf(takeoff, prices, output_pdf, customer, proj_name, bid_date)
+        print(json.dumps({
+            "success": True,
+            "pdfPath": output_pdf,
+            "projectName": proj_name,
+            "projectAddress": takeoff.get("project_address", ""),
+            "barCount": len(takeoff.get("bars", [])),
+            "grandTotal": round(grand_total, 2) if grand_total else 0,
+            "warning": error_msg or ""
+        }))
+    except Exception as e:
+        print(json.dumps({"success": False, "error": f"PDF generation failed: {str(e)}"}))
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
