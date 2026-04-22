@@ -104,7 +104,7 @@ function runTakeoff(
     }
     const proc = spawn(python3Bin, args, {
       env: { ...process.env, ...env },
-      timeout: 120_000,
+      timeout: 300_000,  // 5 min — large plan sets need time for text scoring + rendering
     });
 
     let stdout = "";

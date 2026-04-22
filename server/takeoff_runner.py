@@ -81,22 +81,113 @@ def fetch_qbo_prices():
         return dict(FALLBACK_PRICES)
 
 # ── PDF → IMAGES ──────────────────────────────────────────────────────────────
-def pdf_to_images(pdf_path, tmpdir, max_pages=8):
-    """Use pdftoppm to render PDF pages as PNG images."""
+# Keywords that indicate a page contains structural/rebar content
+STRUCTURAL_KEYWORDS = [
+    r'#[3-9]\b', r'#1[0-9]\b',          # rebar sizes: #3 #4 #5 etc
+    r'\brebar\b', r'\breinf', r'\bbar\b',
+    r'\bfooting', r'\bfoundation', r'\bslab',
+    r'\bstem\s*wall', r'\bgrade\s*beam', r'\bpier',
+    r'\bstirrup', r'\bcontinuous', r'\bew\b', r'\bo\.c\.', r'\boc\b',
+    r'\bmat\b', r'\bdowel', r'\bhook', r'\btyp\b',
+    r'\blap\b', r'\bsplice',
+    r"#3@", r"#4@", r"#5@", r"#6@",
+]
+
+def get_page_count(pdf_path):
+    """Return total number of pages in PDF."""
     try:
-        result = subprocess.run(
-            ["pdftoppm", "-r", "150", "-png", "-l", str(max_pages), pdf_path,
-             os.path.join(tmpdir, "page")],
-            capture_output=True, timeout=60
+        r = subprocess.run(["pdfinfo", pdf_path], capture_output=True, text=True, timeout=15)
+        for line in r.stdout.splitlines():
+            if line.lower().startswith("pages:"):
+                return int(line.split(":",1)[1].strip())
+    except Exception:
+        pass
+    return 0
+
+def score_pages_by_text(pdf_path, total_pages):
+    """Extract text from all pages and score each by structural keyword hits.
+    Returns list of (page_num_1based, score) sorted by score desc."""
+    scores = {}
+    try:
+        # pdftotext can dump all pages with page separators
+        r = subprocess.run(
+            ["pdftotext", "-layout", pdf_path, "-"],
+            capture_output=True, text=True, timeout=90
         )
-        images = sorted([
-            os.path.join(tmpdir, f)
-            for f in os.listdir(tmpdir)
-            if f.startswith("page") and f.endswith(".png")
-        ])
-        return images
-    except Exception as e:
-        return []
+        pages_text = r.stdout.split("\x0c")  # form-feed separates pages
+        for i, text in enumerate(pages_text):
+            page_num = i + 1
+            if page_num > total_pages:
+                break
+            t = text.lower()
+            score = 0
+            for kw in STRUCTURAL_KEYWORDS:
+                score += len(re.findall(kw, t, re.IGNORECASE))
+            scores[page_num] = score
+    except Exception:
+        pass
+    return sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+def render_pages(pdf_path, tmpdir, page_numbers, dpi=150):
+    """Render specific pages of a PDF to PNG images. Returns list of image paths."""
+    images = []
+    for pg in page_numbers:
+        prefix = os.path.join(tmpdir, f"pg{pg:04d}")
+        try:
+            subprocess.run(
+                ["pdftoppm", "-r", str(dpi), "-png",
+                 "-f", str(pg), "-l", str(pg), pdf_path, prefix],
+                capture_output=True, timeout=30
+            )
+            # pdftoppm appends -1 or the page number to the prefix
+            matches = sorted([
+                os.path.join(tmpdir, f)
+                for f in os.listdir(tmpdir)
+                if f.startswith(f"pg{pg:04d}") and f.endswith(".png")
+            ])
+            images.extend(matches)
+        except Exception:
+            pass
+    return images
+
+def pdf_to_images(pdf_path, tmpdir, max_pages=8):
+    """Smart page selection: score all pages by structural keywords,
+    render top structural pages at full res. Falls back to first N pages."""
+    total = get_page_count(pdf_path)
+    if total == 0:
+        total = max_pages  # fallback
+
+    # For small docs, just render all pages
+    if total <= 20:
+        try:
+            subprocess.run(
+                ["pdftoppm", "-r", "150", "-png", pdf_path,
+                 os.path.join(tmpdir, "page")],
+                capture_output=True, timeout=120
+            )
+            return sorted([
+                os.path.join(tmpdir, f)
+                for f in os.listdir(tmpdir)
+                if f.startswith("page") and f.endswith(".png")
+            ])
+        except Exception:
+            return []
+
+    # Large doc: score pages by text content, pick top structural pages
+    scored = score_pages_by_text(pdf_path, total)
+
+    # Take pages with score > 0, up to 20; fall back to first 12 if nothing scores
+    structural_pages = [pg for pg, sc in scored if sc > 0][:20]
+    if not structural_pages:
+        structural_pages = list(range(1, min(total+1, 13)))  # first 12
+
+    # Always include first 2 pages (title sheet often has project name)
+    for p in [1, 2]:
+        if p not in structural_pages and p <= total:
+            structural_pages.append(p)
+
+    structural_pages = sorted(set(structural_pages))
+    return render_pages(pdf_path, tmpdir, structural_pages, dpi=150)
 
 # ── CLAUDE TAKEOFF ────────────────────────────────────────────────────────────
 TAKEOFF_SYSTEM = """You are an expert rebar takeoff estimator for Rebar Concrete Products in McKinney, TX.
@@ -147,7 +238,7 @@ def claude_takeoff(image_paths):
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         
         content = []
-        for img_path in image_paths[:6]:  # Max 6 pages
+        for img_path in image_paths[:20]:  # Up to 20 structural pages
             with open(img_path, "rb") as f:
                 img_b64 = base64.standard_b64encode(f.read()).decode("utf-8")
             content.append({
@@ -162,7 +253,7 @@ def claude_takeoff(image_paths):
         
         msg = client.messages.create(
             model="claude-opus-4-5",
-            max_tokens=4096,
+            max_tokens=8192,
             system=TAKEOFF_SYSTEM,
             messages=[{"role": "user", "content": content}]
         )
