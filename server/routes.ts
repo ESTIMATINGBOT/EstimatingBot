@@ -328,7 +328,7 @@ export async function registerRoutes(httpServer: Server, app: Express) {
 
   // Version / health probe
   app.get("/api/version", (_req, res) => {
-    res.json({ version: "1aa4a57", engine: "pymupdf" });
+    res.json({ version: "streaming-render", engine: "pymupdf-fitz" });
   });
 
   // Poll bid status

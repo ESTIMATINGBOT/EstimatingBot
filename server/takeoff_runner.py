@@ -585,81 +585,116 @@ def merge_takeoffs(results):
 
 def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
     """
-    Maximum-accuracy pipeline:
-    1. Render ALL pages at 75 DPI
-    2. Detect unit count from cover/index pages (so TYP. details get multiplied correctly)
-    3. Batch 10 pages at a time through Claude with unit-aware system prompt
-    4. Re-run sparse batches (< 5 bars) as a second pass
-    5. Merge with smart deduplication
+    Maximum-accuracy STREAMING pipeline (memory-safe for large PDFs):
+    1. Score all pages by text (pdftotext / pdfplumber fallback) - no rendering
+    2. Select pages to render (smart filter + neighbour expansion)
+    3. Render first 5 pages -> detect unit count -> DELETE those PNGs
+    4. Render + process 10 pages at a time -> DELETE PNGs after each batch
+    5. Re-run sparse batches with second-pass prompt (re-render on demand)
+    6. Merge with smart deduplication
+    Peak disk usage: ~40MB (10 pages at 75 DPI) instead of 600MB (all pages at once)
     """
     total = get_page_count(pdf_path)
     if not total:
         return None, "Could not determine page count"
 
-    # Step 1: Smart render — scores pages by text, renders up to MAX_RENDER_PAGES
-    all_images, render_meta = render_all_pages(pdf_path, tmpdir, dpi=dpi)
-    if not all_images:
-        return None, f"Render failed: no pages produced"
+    # Step 1: Score pages by text (fast, no rendering)
+    scores = score_pages_by_text(pdf_path, total)
+    pages_to_render = select_pages_to_render(total, scores)
+    text_hits = sum(1 for s in scores.values() if s > 0)
+    filtered = len(pages_to_render) < total
 
-    # Build a human-readable render summary for the notes field
-    if isinstance(render_meta, dict):
-        render_note = (
-            f"[Pages: {render_meta['total_pages']} total, "
-            f"{render_meta['rendered_pages']} rendered"
-            + (f", {render_meta['text_hit_pages']} text hits" if render_meta['filtered'] else ", all pages rendered")
-            + "]"
-        )
-    else:
-        render_note = ""
+    render_note = (
+        f"[Pages: {total} total, {len(pages_to_render)} rendered"
+        + (f", {text_hits} text hits" if filtered else ", all pages rendered")
+        + "]"
+    )
 
-    # Step 2: Detect repeating unit count from cover pages
-    unit_count = detect_unit_count(all_images)
+    # Step 2: Render first 5 selected pages for unit-count detection
+    probe_pages = pages_to_render[:5]
+    probe_imgs = render_pages(pdf_path, tmpdir, probe_pages, dpi=dpi)
+    if not probe_imgs:
+        return None, "Render failed: could not render any pages"
 
-    # Build system prompts with the detected unit count baked in
+    # Step 3: Detect repeating unit count
+    unit_count = detect_unit_count(probe_imgs)
+
+    # Delete probe PNGs to free disk space before main render loop
+    for p in probe_imgs:
+        try:
+            os.remove(p)
+        except Exception:
+            pass
+
+    # Build system prompts with detected unit count baked in
     takeoff_system     = build_takeoff_system(unit_count)
     second_pass_system = SECOND_PASS_SYSTEM_BASE.format(
         unit_count_rule=UNIT_COUNT_RULE_TEMPLATE.format(unit_count=unit_count)
         if unit_count > 1 else NO_REPEAT_RULE
     )
 
-    # Step 3: Split into batches and run first pass
-    batches = [all_images[i:i+batch_size] for i in range(0, len(all_images), batch_size)]
+    # Step 4: Stream through pages in batches — render, send to Claude, DELETE
+    page_batches = [
+        pages_to_render[i:i+batch_size]
+        for i in range(0, len(pages_to_render), batch_size)
+    ]
+
     first_pass_results = []
-    sparse_batches = []   # batches that returned < 5 bars — worth a second look
+    sparse_batches = []   # (page_nums, label) tuples for second pass
     errors = []
 
-    for i, batch in enumerate(batches):
-        start_pg = i * batch_size + 1
-        end_pg = min(start_pg + batch_size - 1, total)
-        label = f"pages {start_pg}–{end_pg} of {total} ({unit_count} units)"
+    for i, page_nums in enumerate(page_batches):
+        start_pg = page_nums[0]
+        end_pg   = page_nums[-1]
+        label = f"pages {start_pg}-{end_pg} of {total} ({unit_count} units)"
+
+        # Render only this batch of pages
+        batch_imgs = render_pages(pdf_path, tmpdir, page_nums, dpi=dpi)
+        if not batch_imgs:
+            errors.append(f"Batch {i+1}: no images rendered for pages {start_pg}-{end_pg}")
+            continue
 
         result, err = claude_takeoff_batch(
-            batch, label, second_pass=False,
+            batch_imgs, label, second_pass=False,
             takeoff_system=takeoff_system,
             second_pass_system=second_pass_system
         )
+
+        # DELETE PNGs immediately after Claude processes them
+        for p in batch_imgs:
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+
         if result:
             bar_count = len(result.get("bars") or [])
             has_accessories = (result.get("dobies_qty", 0) > 0 or
                                result.get("poly_rolls", 0) > 0)
             if bar_count > 0 or has_accessories:
                 first_pass_results.append(result)
-                # Flag batches with very few bars for second pass
-                if bar_count < 5 and bar_count > 0:
-                    sparse_batches.append((batch, label))
+                if 0 < bar_count < 5:
+                    sparse_batches.append((page_nums, label))
         elif err:
             errors.append(f"Batch {i+1} ({label}): {err}")
 
-    # Step 4: Second pass on sparse batches
+    # Step 5: Second pass on sparse batches — re-render on demand
     second_pass_results = []
-    for batch, label in sparse_batches:
-        result2, err2 = claude_takeoff_batch(
-            batch, label, second_pass=True,
-            takeoff_system=takeoff_system,
-            second_pass_system=second_pass_system
-        )
-        if result2 and result2.get("bars"):
-            second_pass_results.append(result2)
+    for page_nums, label in sparse_batches:
+        batch_imgs = render_pages(pdf_path, tmpdir, page_nums, dpi=dpi)
+        if batch_imgs:
+            result2, _ = claude_takeoff_batch(
+                batch_imgs, label, second_pass=True,
+                takeoff_system=takeoff_system,
+                second_pass_system=second_pass_system
+            )
+            for p in batch_imgs:
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+            if result2 and result2.get("bars"):
+                second_pass_results.append(result2)
 
     all_results = first_pass_results + second_pass_results
     if not all_results:
@@ -667,10 +702,10 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
         return None, err_summary
 
     merged = merge_takeoffs(all_results)
-    # Embed pipeline metadata in notes for traceability
     meta_prefix = " ".join(filter(None, [render_note, f"[Units: {unit_count}]"]))
     merged["notes"] = (meta_prefix + " " + merged.get("notes", "")).strip()
     return merged, None
+
 
 
 # ── PDF GENERATION ─────────────────────────────────────────────────────────────
