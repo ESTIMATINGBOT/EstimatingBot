@@ -6,7 +6,7 @@ import fs from "fs";
 import os from "os";
 import https from "https";
 import http from "http";
-import { spawn } from "child_process";
+import { spawn, execSync } from "child_process";
 import nodemailer from "nodemailer";
 import { storage } from "./storage";
 
@@ -95,7 +95,14 @@ function runTakeoff(
   return new Promise((resolve) => {
     const scriptPath = path.join(__dirname, "takeoff_runner.py");
     const args = [scriptPath, inputPdf, outputPdf, customerName, projectName, bidDate];
-    const proc = spawn("python3", args, {
+    // Resolve python3 path — on Railway/Nix the binary may not be on PATH directly
+    let python3Bin = "python3";
+    try {
+      python3Bin = execSync("which python3 || which python", { encoding: "utf8" }).trim().split("\n")[0] || "python3";
+    } catch {
+      python3Bin = "/usr/bin/python3";
+    }
+    const proc = spawn(python3Bin, args, {
       env: { ...process.env, ...env },
       timeout: 120_000,
     });
@@ -195,6 +202,17 @@ async function sendBidEmails(
 
 // ── ROUTES ────────────────────────────────────────────────────────────────────
 export async function registerRoutes(httpServer: Server, app: Express) {
+  // Diagnostic: Python availability check
+  app.get("/api/python-check", (_req, res) => {
+    try {
+      const pythonPath = execSync("which python3 || which python", { encoding: "utf8" }).trim();
+      const pythonVersion = execSync(`${pythonPath} --version`, { encoding: "utf8" }).trim();
+      res.json({ available: true, path: pythonPath, version: pythonVersion });
+    } catch (e: any) {
+      res.json({ available: false, error: e.message });
+    }
+  });
+
   // Submit plan for bid
   app.post("/api/bids", upload.single("planFile"), async (req, res) => {
     const { customerName, customerEmail, customerPhone, projectName, planUrl } = req.body;
