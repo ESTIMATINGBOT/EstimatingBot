@@ -1,4 +1,4 @@
-# Use Node.js 20 base image (Debian Bookworm)
+# Use Node.js 20 base image (Debian Bookworm) — build v2
 FROM node:20-bookworm-slim
 
 # Install Python 3, pip, and poppler-utils (for pdftoppm)
