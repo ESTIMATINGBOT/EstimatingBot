@@ -1072,8 +1072,8 @@ def main():
     prices = fetch_qbo_prices()
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Maximum accuracy: 75 DPI, batch size 10, second pass on sparse batches
-        takeoff, error_msg = claude_takeoff_all_pages(input_pdf, tmpdir, dpi=75, batch_size=10)
+        # 50 DPI + batch-5: memory-safe on Railway 512MB (62MB raw/batch vs 512MB limit)
+        takeoff, error_msg = claude_takeoff_all_pages(input_pdf, tmpdir, dpi=50, batch_size=5)
 
     if not takeoff:
         takeoff = {
