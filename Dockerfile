@@ -1,16 +1,18 @@
-# Use Node.js 20 base image (Debian Bookworm) — build v2
+# Use Node.js 20 base image (Debian Bookworm)
 FROM node:20-bookworm-slim
 
-# Install Python 3, pip, and poppler-utils (for pdftoppm)
+# Install Python 3 and pip — no poppler needed (PyMuPDF handles all PDF rendering)
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
-    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python packages (pymupdf = pure-Python PDF renderer, no poppler needed)
-RUN pip3 install --break-system-packages anthropic reportlab pillow pymupdf pikepdf pdfplumber
+# Install Python packages
+# pymupdf = pure-Python PDF page renderer (replaces pdftoppm)
+# pdfplumber = pure-Python text extractor (replaces pdftotext/pdfinfo)
+# pikepdf = fallback page counter
+RUN pip3 install --break-system-packages anthropic reportlab pillow pymupdf pdfplumber pikepdf
 
 WORKDIR /app
 
