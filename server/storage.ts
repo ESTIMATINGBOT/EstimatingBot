@@ -5,7 +5,11 @@ import { bids, type Bid, type InsertBid } from "@shared/schema";
 import path from "path";
 import fs from "fs";
 
-const DB_PATH = path.join(process.cwd(), "bids.db");
+// Use /tmp in production (Railway filesystem is ephemeral but writable at /tmp)
+// Fall back to cwd for local dev
+const DB_PATH = process.env.NODE_ENV === 'production'
+  ? '/tmp/bids.db'
+  : path.join(process.cwd(), "bids.db");
 const sqlite = new Database(DB_PATH);
 const db = drizzle(sqlite);
 
