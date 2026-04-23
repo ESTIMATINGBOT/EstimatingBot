@@ -438,17 +438,20 @@ def build_takeoff_system(unit_count):
 
 
 # ── UNIT COUNT DETECTION ───────────────────────────────────────────────────────
-UNIT_COUNT_SYSTEM = """You are reading the cover sheet and index pages of a construction plan set.
+UNIT_COUNT_SYSTEM = """You are reading pages from a construction plan set.
 Your only job is to determine the total number of repeating units (buildings, lots, homes, cottages, units) in this project.
 
 Return JSON only, no markdown:
 {"unit_count": <integer>, "confidence": "high|medium|low", "evidence": "<one sentence explaining what you saw>"}
 
-Rules:
-- unit_count = 1 means a single custom building (no repetition)
-- Look for: "X-unit community", "X lots", "X buildings", "X homes", unit schedules, site plans showing multiple identical structures
-- If you see a site plan with N identical footprints, that is the unit count
-- If uncertain, return unit_count=1 with confidence=low"""
+CRITICAL RULES:
+- unit_count = 1 means a single custom building OR a project where the structural drawings already show total quantities for the whole project
+- Look for: "X-unit community", "X lots", "X buildings", "X homes", unit schedules
+- If you see a site plan with N identical footprints, that is ONLY the unit count if the structural drawings show ONE TYPICAL unit's rebar (not the whole project total)
+- If the structural/foundation drawings show "TYPICAL" details without a count of how many times they repeat, default to unit_count=1
+- If a project is described as a "community" or "development" with multiple units BUT the structural sheets show quantities labeled as project totals or schedules for all units, use unit_count=1
+- IMPORTANT: When in doubt, return unit_count=1. Over-multiplying is a much worse error than under-multiplying.
+- Only return unit_count > 1 if you have HIGH confidence and clear evidence the structural drawings show a single typical unit's quantities"""
 
 def detect_unit_count(all_images):
     """Send the first few pages to Claude to detect how many repeating units the project has."""
@@ -642,8 +645,12 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
         + "]"
     )
 
-    # Step 2: Render first 5 selected pages for unit-count detection
-    probe_pages = pages_to_render[:5]
+    # Step 2: Render probe pages for unit-count detection
+    # Use 2 cover pages (front) + 3 structural pages (back) so Claude sees
+    # both the project scope AND the format of the structural drawings
+    probe_front = pages_to_render[:2]
+    probe_back  = pages_to_render[-3:] if len(pages_to_render) >= 5 else []
+    probe_pages = sorted(set(probe_front + probe_back)) or pages_to_render[:5]
     probe_imgs = render_pages(pdf_path, tmpdir, probe_pages, dpi=dpi)
     if not probe_imgs:
         return None, "Render failed: could not render any pages"
