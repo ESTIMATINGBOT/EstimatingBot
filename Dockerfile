@@ -2,10 +2,12 @@
 FROM node:20-bookworm-slim
 
 # Install Python 3 and pip — no poppler needed (PyMuPDF handles all PDF rendering)
+# build-essential needed for any native Node addons (ws, bufferutil, etc.)
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages
