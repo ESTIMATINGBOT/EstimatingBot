@@ -80,7 +80,14 @@ def fetch_qbo_prices():
 
 # ── PAGE RENDERING ─────────────────────────────────────────────────────────────
 def get_page_count(pdf_path):
-    # Try pdfinfo first (fast)
+    # Try pikepdf first — memory-efficient, just reads metadata, no page rendering
+    try:
+        import pikepdf
+        with pikepdf.open(pdf_path) as pdf:
+            return len(pdf.pages)
+    except Exception:
+        pass
+    # Try pdfinfo (fast CLI, no memory overhead)
     try:
         r = subprocess.run(["pdfinfo", pdf_path], capture_output=True, text=True, timeout=15)
         for line in r.stdout.splitlines():
@@ -90,18 +97,13 @@ def get_page_count(pdf_path):
                     return n
     except Exception:
         pass
-    # Fallback: use pdfplumber (pure Python, always available)
+    # Last resort: PyMuPDF (also memory-efficient for metadata)
     try:
-        import pdfplumber
-        with pdfplumber.open(pdf_path) as pdf:
-            return len(pdf.pages)
-    except Exception:
-        pass
-    # Last resort: pikepdf
-    try:
-        import pikepdf
-        with pikepdf.open(pdf_path) as pdf:
-            return len(pdf.pages)
+        import fitz
+        doc = fitz.open(pdf_path)
+        n = doc.page_count
+        doc.close()
+        return n
     except Exception:
         pass
     return 0
@@ -129,9 +131,10 @@ ALWAYS_INCLUDE_FIRST_N = 5   # cover, index, general notes
 # After text scoring, keep this many neighbours around each hit page
 NEIGHBOUR_RADIUS = 1
 # Hard cap on rendered pages regardless of PDF size — keeps runtime bounded
-# 150 covers typical large residential sets (100-150 pages) without filtering
-# Plans above 150 pages get smart-filtered: text hits + neighbours + even sample
-MAX_RENDER_PAGES = 150
+# Lowered to 80 for Railway 512MB memory limit: 80 pages @ 50DPI ~40MB peak
+MAX_RENDER_PAGES = 80
+# PDFs larger than this skip text scoring (loading huge PDFs into pdfplumber OOMs)
+SKIP_SCORING_BYTES = 50 * 1024 * 1024  # 50 MB
 
 def score_pages_by_text(pdf_path, total_pages):
     """
@@ -139,7 +142,15 @@ def score_pages_by_text(pdf_path, total_pages):
     Tries pdftotext first, falls back to pdfplumber (pure Python).
     Image-only pages score 0 but are still candidates via neighbour expansion.
     Returns dict of {page_num (1-based): score}.
+    Skips scoring entirely for PDFs > SKIP_SCORING_BYTES — just returns uniform scores.
     """
+    # For large PDFs, skip scoring to avoid OOM — pdfplumber loads entire file into RAM
+    try:
+        if os.path.getsize(pdf_path) > SKIP_SCORING_BYTES:
+            # Return uniform scores — select_pages_to_render will just take first MAX_RENDER_PAGES
+            return {pg: 0 for pg in range(1, total_pages + 1)}
+    except Exception:
+        pass
     scores = {}
     # --- Try pdftotext (fast, handles multi-page in one shot) ---
     pdftotext_ok = False
@@ -197,6 +208,22 @@ def select_pages_to_render(total_pages, scores):
     # For small plan sets, render everything — no filtering needed
     if total_pages <= MAX_RENDER_PAGES:
         return list(range(1, total_pages + 1))
+
+    # If all scores are 0 (large PDF, scoring was skipped), take evenly-spaced pages
+    # biased toward the front of the plan set (structural sheets come first)
+    all_zero = all(sc == 0 for sc in scores.values())
+    if all_zero:
+        # Take first 60% of budget from the front, rest evenly across remainder
+        front_count = int(MAX_RENDER_PAGES * 0.6)
+        front_pages = list(range(1, min(front_count + 1, total_pages + 1)))
+        remaining_pages = list(range(front_count + 1, total_pages + 1))
+        remaining_budget = MAX_RENDER_PAGES - len(front_pages)
+        if remaining_pages and remaining_budget > 0:
+            step = max(1, len(remaining_pages) // remaining_budget)
+            sampled = remaining_pages[::step][:remaining_budget]
+        else:
+            sampled = []
+        return sorted(set(front_pages + sampled))[:MAX_RENDER_PAGES]
 
     selected = set(range(1, min(ALWAYS_INCLUDE_FIRST_N + 1, total_pages + 1)))
 
@@ -587,12 +614,13 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
     """
     Maximum-accuracy STREAMING pipeline (memory-safe for large PDFs):
     1. Score all pages by text (pdftotext / pdfplumber fallback) - no rendering
+       [Skipped for PDFs > 50MB — uses uniform scoring to avoid OOM]
     2. Select pages to render (smart filter + neighbour expansion)
     3. Render first 5 pages -> detect unit count -> DELETE those PNGs
-    4. Render + process 10 pages at a time -> DELETE PNGs after each batch
+    4. Render + process batch_size pages at a time -> DELETE PNGs after each batch
     5. Re-run sparse batches with second-pass prompt (re-render on demand)
     6. Merge with smart deduplication
-    Peak disk usage: ~40MB (10 pages at 75 DPI) instead of 600MB (all pages at once)
+    Peak disk usage: ~15MB (5 pages at 50 DPI) instead of 600MB (all pages at once)
     """
     total = get_page_count(pdf_path)
     if not total:
