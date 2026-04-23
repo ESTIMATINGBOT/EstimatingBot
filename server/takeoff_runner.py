@@ -127,11 +127,12 @@ STRUCTURAL_KEYWORDS = [
 ]
 
 # Pages that are always useful regardless of keyword score
-ALWAYS_INCLUDE_FIRST_N = 5   # cover, index, general notes
+ALWAYS_INCLUDE_FIRST_N = 5    # cover, index, general notes
+ALWAYS_INCLUDE_LAST_N  = 40   # structural sheets almost always at end of combined sets
 # After text scoring, keep this many neighbours around each hit page
 NEIGHBOUR_RADIUS = 1
 # Hard cap on rendered pages regardless of PDF size — keeps runtime bounded
-# Lowered to 80 for Railway 512MB memory limit: 80 pages @ 50DPI ~40MB peak
+# 80 pages @ 50DPI ~40MB peak RAM on Railway 512MB containers
 MAX_RENDER_PAGES = 80
 # PDFs larger than this skip text scoring (loading huge PDFs into pdfplumber OOMs)
 SKIP_SCORING_BYTES = 50 * 1024 * 1024  # 50 MB
@@ -209,21 +210,24 @@ def select_pages_to_render(total_pages, scores):
     if total_pages <= MAX_RENDER_PAGES:
         return list(range(1, total_pages + 1))
 
-    # If all scores are 0 (large PDF, scoring was skipped), take evenly-spaced pages
-    # biased toward the front of the plan set (structural sheets come first)
+    # If all scores are 0 (large PDF, scoring was skipped), use a 3-zone strategy:
+    # Zone A: first ALWAYS_INCLUDE_FIRST_N pages (cover/index)
+    # Zone B: last ALWAYS_INCLUDE_LAST_N pages (structural sheets cluster at end)
+    # Zone C: evenly sample the middle with remaining budget
     all_zero = all(sc == 0 for sc in scores.values())
     if all_zero:
-        # Take first 60% of budget from the front, rest evenly across remainder
-        front_count = int(MAX_RENDER_PAGES * 0.6)
-        front_pages = list(range(1, min(front_count + 1, total_pages + 1)))
-        remaining_pages = list(range(front_count + 1, total_pages + 1))
-        remaining_budget = MAX_RENDER_PAGES - len(front_pages)
-        if remaining_pages and remaining_budget > 0:
-            step = max(1, len(remaining_pages) // remaining_budget)
-            sampled = remaining_pages[::step][:remaining_budget]
+        first_pages = list(range(1, min(ALWAYS_INCLUDE_FIRST_N + 1, total_pages + 1)))
+        last_start = max(ALWAYS_INCLUDE_FIRST_N + 1, total_pages - ALWAYS_INCLUDE_LAST_N + 1)
+        last_pages = list(range(last_start, total_pages + 1))
+        anchors = set(first_pages + last_pages)
+        remaining_budget = max(0, MAX_RENDER_PAGES - len(anchors))
+        middle_pages = [pg for pg in range(ALWAYS_INCLUDE_FIRST_N + 1, last_start) if pg not in anchors]
+        if middle_pages and remaining_budget > 0:
+            step = max(1, len(middle_pages) // remaining_budget)
+            sampled_middle = middle_pages[::step][:remaining_budget]
         else:
-            sampled = []
-        return sorted(set(front_pages + sampled))[:MAX_RENDER_PAGES]
+            sampled_middle = []
+        return sorted(anchors | set(sampled_middle))[:MAX_RENDER_PAGES]
 
     selected = set(range(1, min(ALWAYS_INCLUDE_FIRST_N + 1, total_pages + 1)))
 
