@@ -615,15 +615,17 @@ def merge_takeoffs(results):
         for bar in (r.get("bars") or []):
             key = normalize_bar_key(bar)
             if key in seen_bar_keys:
-                # Duplicate detected — take the entry with the higher qty
+                # Same bar spec seen again — SUM quantities across batches.
+                # Different pages may show different cottage/unit schedules with
+                # identical mark/size/length — they must be added, not max'd.
+                # Over-dedup (max) was causing ~35% undercount on multi-unit projects.
                 existing_idx = seen_bar_keys[key]
-                existing_qty = merged["bars"][existing_idx].get("qty", 0)
-                new_qty = bar.get("qty", 0)
-                if new_qty > existing_qty:
-                    merged["bars"][existing_idx] = bar
+                existing = merged["bars"][existing_idx]
+                existing["qty"] = existing.get("qty", 0) + bar.get("qty", 0)
+                existing["weight_lbs"] = (existing.get("weight_lbs") or 0) + (bar.get("weight_lbs") or 0)
             else:
                 seen_bar_keys[key] = len(merged["bars"])
-                merged["bars"].append(bar)
+                merged["bars"].append(dict(bar))  # copy to avoid mutation
 
         # For accessories: take the MAX seen across all batches (not sum)
         # Each batch sees the whole project, so summing would double-count
@@ -734,7 +736,7 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
                                result.get("poly_rolls", 0) > 0)
             if bar_count > 0 or has_accessories:
                 first_pass_results.append(result)
-                if 0 < bar_count < 8:
+                if 0 < bar_count < 5:
                     sparse_batches.append((page_nums, label))
         elif err:
             errors.append(f"Batch {i+1} ({label}): {err}")
@@ -1160,9 +1162,10 @@ def main():
         sys.exit(1)
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        # 75 DPI + batch-8: ~29MB/batch (arch-E worst case), well within Railway 512MB
-        # 75 DPI is the minimum for legible bar marks on structural drawings
-        takeoff, error_msg = claude_takeoff_all_pages(input_pdf, tmpdir, dpi=75, batch_size=8)
+        # 50 DPI + batch-5: memory-safe on Railway 512MB
+        # Claude auto-downsizes arch-E sheets to 1045x1568px regardless of DPI above 43
+        # so 50 DPI == 75 DPI == 100 DPI at Claude's end for large drawings
+        takeoff, error_msg = claude_takeoff_all_pages(input_pdf, tmpdir, dpi=50, batch_size=5)
 
     if not takeoff:
         takeoff = {
