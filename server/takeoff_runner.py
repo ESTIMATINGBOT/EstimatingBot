@@ -331,35 +331,107 @@ def split_large_pages(image_paths, tmpdir, threshold_px=1568):
     return result
 
 
+def render_page_hires_quads(pdf_path, tmpdir, pg_1based):
+    """
+    For large-format image-only pages (e.g. 36"x24" structural sheets scanned at 150 DPI):
+    extract the embedded image directly (no re-rendering quality loss), then split into
+    4 quadrants so Claude sees each at near-native resolution instead of a downscaled
+    whole-page view.
+
+    Returns list of quadrant image paths, or [] if extraction fails.
+    Claude's 1568px auto-downscale cap:
+      - Whole page 5400x3600 -> Claude sees 1568x1045px (29 px/in over 36" sheet)
+      - Each 2700x1800 quadrant -> Claude sees 1568x1045px (87 px/in over 18" quad)
+      => 3x resolution improvement, 6x detail density per feature
+    """
+    try:
+        import fitz
+        from PIL import Image as PILImage
+        import io
+
+        doc = fitz.open(pdf_path)
+        page = doc[pg_1based - 1]
+        imgs = page.get_images(full=True)
+        if not imgs:
+            doc.close()
+            return []
+
+        # Use the largest embedded image on the page
+        xref = max(imgs, key=lambda x: x[2] * x[3] if len(x) > 3 else 0)[0]
+        base = doc.extract_image(xref)
+        doc.close()
+
+        img = PILImage.open(io.BytesIO(base["image"]))
+        w, h = img.size
+
+        # Only split if image is large enough to benefit (> 2000px on longest side)
+        if max(w, h) < 2000:
+            out_path = os.path.join(tmpdir, f"pg{pg_1based:04d}-extracted.png")
+            img.save(out_path)
+            return [out_path]
+
+        # Split into 4 quadrants
+        quads = [
+            ("TL", img.crop((0,    0,    w//2, h//2))),
+            ("TR", img.crop((w//2, 0,    w,    h//2))),
+            ("BL", img.crop((0,    h//2, w//2, h   ))),
+            ("BR", img.crop((w//2, h//2, w,    h   ))),
+        ]
+        paths = []
+        for name, q in quads:
+            qpath = os.path.join(tmpdir, f"pg{pg_1based:04d}-{name}.png")
+            q.save(qpath)
+            paths.append(qpath)
+        return paths
+
+    except Exception:
+        return []
+
+
 def render_pages(pdf_path, tmpdir, page_numbers, dpi=75):
-    """Render specific pages of a PDF to PNG. Tries pdftoppm first, falls back to PyMuPDF."""
+    """Render specific pages of a PDF to PNG.
+    For large-format image-only pages, extracts embedded image and splits into quadrants
+    for 3x resolution improvement. Falls back to pdftoppm then PyMuPDF.
+    """
     images = []
     for pg in page_numbers:
-        prefix = os.path.join(tmpdir, f"pg{pg:04d}")
         rendered = False
-        # Try pdftoppm first
-        try:
-            r = subprocess.run(
-                ["pdftoppm", "-r", str(dpi), "-png",
-                 "-f", str(pg), "-l", str(pg), pdf_path, prefix],
-                capture_output=True, timeout=30
-            )
-            matches = sorted([
-                os.path.join(tmpdir, f)
-                for f in os.listdir(tmpdir)
-                if f.startswith(f"pg{pg:04d}") and f.endswith(".png")
-                and "fitz" not in f
-            ])
-            if matches:
-                images.extend(matches)
-                rendered = True
-        except Exception:
-            pass
-        # Fallback: PyMuPDF
+
+        # First: try direct embedded-image extraction + quadrant split
+        # This gives 3x better resolution for large-format scanned structural sheets
+        # (e.g. 36"x24" sheets scanned at 150 DPI embedded as 5400x3600px)
+        quad_imgs = render_page_hires_quads(pdf_path, tmpdir, pg)
+        if quad_imgs:
+            images.extend(quad_imgs)
+            rendered = True
+
+        # Fallback: pdftoppm at specified DPI
+        if not rendered:
+            prefix = os.path.join(tmpdir, f"pg{pg:04d}")
+            try:
+                subprocess.run(
+                    ["pdftoppm", "-r", str(dpi), "-png",
+                     "-f", str(pg), "-l", str(pg), pdf_path, prefix],
+                    capture_output=True, timeout=30
+                )
+                matches = sorted([
+                    os.path.join(tmpdir, f)
+                    for f in os.listdir(tmpdir)
+                    if f.startswith(f"pg{pg:04d}") and f.endswith(".png")
+                    and "fitz" not in f and "-" not in f.replace(f"pg{pg:04d}", "")
+                ])
+                if matches:
+                    images.extend(matches)
+                    rendered = True
+            except Exception:
+                pass
+
+        # Final fallback: PyMuPDF render
         if not rendered:
             out = _render_page_fitz(pdf_path, tmpdir, pg, dpi)
             if out:
                 images.append(out)
+
     return images
 
 def render_all_pages(pdf_path, tmpdir, dpi=75):
@@ -613,7 +685,7 @@ def claude_takeoff_batch(image_paths, batch_label="", second_pass=False, takeoff
         else:
             content.append({
                 "type": "text",
-                "text": f"These are plan pages {batch_label}. Large-format sheets (36\"x24\") have been split into LEFT and RIGHT halves to maximize your reading resolution — treat paired _L/_R images as one sheet. Analyze ALL rebar shown and return the JSON takeoff. Apply unit repetition multipliers per your instructions. If no structural/rebar content is visible on these pages, return an empty bars array with dobies_qty=0 and all accessory counts=0."
+                "text": f"These are plan pages {batch_label}. Large-format structural sheets (36\"x24\") have been split into 4 quadrants (TL/TR/BL/BR) for maximum reading resolution — treat all quadrant images from the same page as one complete drawing. Analyze ALL rebar shown across all images and return the JSON takeoff. Apply unit repetition multipliers per your instructions. If no structural/rebar content is visible on these pages, return an empty bars array with dobies_qty=0 and all accessory counts=0."
             })
             system = takeoff_system or build_takeoff_system(1)
 
