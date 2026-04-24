@@ -523,8 +523,9 @@ CRITICAL RULES:
 - For each bar: weight_lbs = qty * length_ft * weight_per_lf
 - type must be: "straight", "l-hook", "u-bar", "stirrup", "ring", or "custom"
 - is_fabricated = true for anything that is bent/shaped (stirrups, hooks, U-bars, rings, ties)
-- is_fabricated = false for straight stock bars only
-- Apply 7% waste factor to straight bar quantities (multiply qty by 1.07, round up)
+- is_fabricated = true for ANY bar whose length is not exactly 20' or 40' — even if straight (custom lengths are fabricated cuts, charged at $0.75/lb)
+- is_fabricated = false ONLY for straight bars that are exactly 20'0" or 40'0" stock length
+- Apply 7% waste factor to straight stock bars only (exact 20'/40', multiply qty by 1.07, round up)
 - Stirrup cut length formula: 2*(W+H)+8 inches total | Ring: pi*D+4 inches
 - If dobies/chairs not specified, estimate: 1 per 4 sq ft of slab
 - If poly not called out explicitly on plans, set poly_rolls to 0
@@ -551,9 +552,10 @@ this is a CADS-USA or fabricator bar list. Read it as follows:
 - "Type" column = bend type code (T2=closed stirrup, 2=L-hook/90-deg bend, straight=no mark)
 - Columns A, B, C, D, E, F... = bend dimensions ONLY — do NOT use these as quantities
 - is_fabricated = true for any bar with a Type code (T2, 2, 3, etc.)
-- is_fabricated = false for straight bars (no Type code, or Type = straight/stock)
+- is_fabricated = true for any bar whose length is not exactly 20'0" or 40'0" — even if no bend code (custom lengths are fabricated cuts)
+- is_fabricated = false ONLY for straight bars that are exactly 20'0" or 40'0"
 - Do NOT apply 7% waste to fabricated bars — quantities are already exact piece counts
-- Apply 7% waste only to straight stock bars
+- Apply 7% waste only to exact 20'/40' stock bars
 - Output one bars[] entry per row — if the list has 15 rows, output 15 entries
 
 Be thorough — read every note, detail, section cut, schedule, and plan view on each page.
@@ -835,8 +837,9 @@ Return a JSON object with this exact structure:
 
 CRITICAL:
 - is_fabricated=true for stirrups, hooks, U-bars, rings, ties
-- is_fabricated=false for straight stock bars only
-- Apply 7% waste to straight bars (multiply qty × 1.07, round up)
+- is_fabricated=true for ANY bar not exactly 20'0" or 40'0" — even if straight (charged at $0.75/lb)
+- is_fabricated=false ONLY for exact 20'/40' straight stock bars
+- Apply 7% waste to exact 20'/40' stock bars only (multiply qty × 1.07, round up)
 - Stirrup cut length: 2×(W+H)+8 inches | Ring: π×D+4 inches
 - Return ONLY valid JSON, no markdown fences
 - Show your dimension source in the description (e.g. "from 34'x34' footprint scaled off grid")
@@ -1011,15 +1014,29 @@ def try_parse_cads_bar_list(pdf_path):
         if length_ft is None or qty <= 0:
             continue
 
-        fab   = _is_fab(tcode)
-        wlf   = _WEIGHTS.get(size, 0)
+        # A bar is fabricated if: (a) it has a bend type code, OR
+        # (b) its length is not exactly a stock length (20' or 40')
+        _STOCK_LENGTHS = {20.0, 40.0}
+        type_fab   = _is_fab(tcode)
+        length_fab = round(length_ft, 3) not in _STOCK_LENGTHS
+        fab        = type_fab or length_fab
+        wlf        = _WEIGHTS.get(size, 0)
 
-        # Apply 7% waste to straight stock bars only
+        # Apply 7% waste to true stock bars only (exact 20'/40', no bend code)
         qty_final = qty if fab else _math.ceil(qty * 1.07)
         weight    = round(qty_final * length_ft * wlf, 1)
 
-        bend_type = "stirrup" if "T" in tcode else ("l-hook" if tcode else "straight")
-        desc = f"{size} {raw_l} — {'fabricated' if fab else 'stock'}"
+        if type_fab:
+            bend_type = "stirrup" if "T" in tcode else "l-hook"
+        elif length_fab:
+            bend_type = "custom-length"
+        else:
+            bend_type = "straight"
+
+        fab_reason = ""
+        if length_fab and not type_fab:
+            fab_reason = f" [custom length — fab rate]"
+        desc = f"{size} {raw_l} — {'fabricated' if fab else 'stock'}{fab_reason}"
         if mark:
             desc = f"{mark}: {desc}"
 
@@ -1401,20 +1418,30 @@ def generate_bid_pdf(takeoff, prices, output_path, customer_name, project_name, 
         wt      = float(bar.get("weight_lbs", 0))
         btype   = bar.get("type", "straight")
 
-        if is_fab:
+        # Business rule: any bar that is not exactly a stock length (20' or 40')
+        # is charged at the fabrication rate of $0.75/lb — even if straight.
+        STOCK_LENGTHS = {20.0, 40.0}
+        is_non_stock_length = round(length, 3) not in STOCK_LENGTHS
+        treat_as_fab = is_fab or is_non_stock_length
+
+        if treat_as_fab:
             ext = wt * prices["FAB"]
+            fab_note = ""
+            if is_non_stock_length and not is_fab:
+                fab_note = f" [custom length {length:.2f}ft — fab rate]"
             fab_lines.append({
                 "mark": mark, "size": size, "type": btype,
                 "length": length, "qty": qty, "lbs": wt,
-                "unit_price": prices["FAB"], "ext": ext, "desc": desc
+                "unit_price": prices["FAB"], "ext": ext,
+                "desc": desc + fab_note
             })
             total_fab_lbs += wt
             fab_sub += ext
         else:
-            price_key  = f"{size} 20'"
-            # Use exact match first; if size not in price list (e.g. #8, #9)
-            # flag it with $0.00 so it shows on the bid as needing a manual price
-            unit_price = prices.get(price_key, 0.0)
+            # Exact 20' or 40' stock bar
+            price_key  = f"{size} 20'" if length == 20.0 else f"{size} 40'"
+            # Fall back to 20' key if no 40' entry in QBO
+            unit_price = prices.get(price_key) or prices.get(f"{size} 20'", 0.0)
 
             if length < 20:
                 cuts_per_bar = max(1, int(20 / length))
