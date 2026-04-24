@@ -8,9 +8,9 @@ Outputs JSON to stdout: {"success": true, "pdfPath": "...", "grandTotal": 0.00, 
 or {"success": false, "error": "..."}
 
 Pipeline (maximum accuracy):
-  1. Render ALL pages at 75 DPI via pdftoppm
-  2. Send in batches of 10 to Claude (claude-opus-4-5) — ~15 batches for 142-page set
-  3. Any batch returning sparse results (< 5 bars) gets a second pass at higher detail
+  1. Render selected pages at 75 DPI via pdftoppm (80-page cap, 3-zone selection)
+  2. Send in batches of 8 to Claude (claude-opus-4-5) — ~10 batches for 80-page set
+  3. Any batch returning sparse results (< 8 bars) gets a second pass at higher detail
   4. Merge all results with smart deduplication (same mark+size+length = one entry)
   5. Pull live QBO pricing, generate branded 4-page RCP bid PDF
 """
@@ -734,7 +734,7 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
                                result.get("poly_rolls", 0) > 0)
             if bar_count > 0 or has_accessories:
                 first_pass_results.append(result)
-                if 0 < bar_count < 5:
+                if 0 < bar_count < 8:
                     sparse_batches.append((page_nums, label))
         elif err:
             errors.append(f"Batch {i+1} ({label}): {err}")
@@ -1160,8 +1160,9 @@ def main():
         sys.exit(1)
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        # 50 DPI + batch-5: memory-safe on Railway 512MB (62MB raw/batch vs 512MB limit)
-        takeoff, error_msg = claude_takeoff_all_pages(input_pdf, tmpdir, dpi=50, batch_size=5)
+        # 75 DPI + batch-8: ~29MB/batch (arch-E worst case), well within Railway 512MB
+        # 75 DPI is the minimum for legible bar marks on structural drawings
+        takeoff, error_msg = claude_takeoff_all_pages(input_pdf, tmpdir, dpi=75, batch_size=8)
 
     if not takeoff:
         takeoff = {
