@@ -802,19 +802,45 @@ ASCENSION_REBAR_PAGES = [
 # Ascension Cottages takeoff was produced in a conversational session.
 
 HOLISTIC_SYSTEM = """You are an expert rebar estimator performing a quantity takeoff from structural plans.
-The batch scan of this plan set returned too few bars — the plans likely use spacing callouts
-(e.g. "#4 @ 12\" O.C.") rather than bar schedule tables.
+Your job: read ALL the images provided, identify EVERY rebar callout and design data table, and
+CALCULATE actual quantities. These plans may use spacing callouts, design data tables, pier/grade
+beam schedules, or section details instead of a traditional bar schedule table.
 
-Your job: read ALL the images provided, identify every rebar callout, and CALCULATE actual
-quantities from spacing × dimension × unit count. Do not just copy spacings — compute bar counts.
+PLAN TYPES YOU MUST HANDLE:
+
+1. BAR SCHEDULE TABLES: rows of MARK | SIZE | LENGTH | QTY — read every row directly.
+
+2. SPACING CALLOUTS (slab on grade): e.g. "#4 @ 12\" O.C. E.W."
+   Calculate: bars_EW = floor(slab_width_inches / spacing_inches) + 1
+              bars_NS = floor(slab_length_inches / spacing_inches) + 1
+   Use dimensions from the plan view or dimension strings shown.
+
+3. DRILLED PIER + GRADE BEAM FOUNDATIONS (very common in Texas residential):
+   Look for a DESIGN DATA table or DRILLED PIERS schedule showing:
+   - Pier quantity (e.g. "QUANTITY: 60"), diameter, depth, cage steel (e.g. "(3) #5's"), stirrups
+   - Grade beam: width, height, cage steel (e.g. "(2) #5's @ 18\" VERT."), stirrups
+   - Slab reinforcing (e.g. "#3's @ 12\" GRID")
+   CALCULATE pier cage bars:
+     - Vertical bars: qty_piers × bars_per_cage × pier_depth_ft × 1.07 (waste)
+     - Stirrups: qty_piers × ceil(pier_depth_ft / stirrup_spacing_ft) × stirrup_cut_length_ft
+   CALCULATE grade beam bars from perimeter:
+     - Estimate total grade beam LF from foundation plan dimensions (sum all beam runs)
+     - Longitudinal bars: total_LF × bars_per_cage × 1.07
+     - Stirrups: ceil(total_LF / stirrup_spacing_ft) × stirrup_cut_length_ft
+   CALCULATE slab mat from slab area:
+     - Read slab area from foundation plan dimensions
+     - bars_EW = floor(slab_width_ft × 12 / spacing_in) + 1, length = slab_length_ft
+     - bars_NS = floor(slab_length_ft × 12 / spacing_in) + 1, length = slab_width_ft
+
+4. SECTION DETAILS: pier section, grade beam section, curb details — read cage steel from
+   the cross-section callouts (e.g. "(2) #5 ROW, MAX. VERT. SPC 18\"", "#3 STIRRUPS @ 24\" O.C.")
 
 STEPS:
-1. Identify all slab/footing/wall areas with rebar callouts
-2. Read or estimate dimensions (scale bars, text callouts, grid lines)
-3. Calculate bars in each direction: bars = floor(span / spacing) + 1
-4. Multiply by unit count for typical/repeated elements
-5. Apply 7% waste to straight stock bars
-6. Return the full takeoff as JSON
+1. Find and read ALL rebar callouts: design data tables, section details, plan view notes
+2. Read foundation plan dimensions to calculate beam perimeter LF and slab area
+3. Calculate all quantities as shown above
+4. Apply 7% waste to straight stock bars only
+5. Return the full takeoff as JSON
 
 Rebar weights per LF: #3=0.376, #4=0.668, #5=1.043, #6=1.502, #7=2.044, #8=2.670, #9=3.400, #10=4.303
 - Valid bar sizes: #3 through #10 — report exactly what is on the plans, do not substitute sizes
@@ -858,7 +884,8 @@ CRITICAL:
 def claude_holistic_pass(pdf_path, tmpdir, structural_pages, unit_count, takeoff_system):
     """
     Send all structural pages at once to Claude with a calculation-oriented prompt.
-    Used when batch scanning returns sparse results (< MIN_BARS_FOR_CONFIDENCE bars total).
+    Used when batch scanning returns sparse results (< MIN_BARS_FOR_CONFIDENCE bars total),
+    or directly for small plans (≤ 5 pages) where callout-style rebar is the norm.
     Returns a takeoff dict or None.
     """
     if not ANTHROPIC_API_KEY or not structural_pages:
@@ -867,8 +894,10 @@ def claude_holistic_pass(pdf_path, tmpdir, structural_pages, unit_count, takeoff
         import anthropic as _anth
         client = _anth.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-        # Render structural pages at 75 DPI (good quality, manageable size)
-        imgs = render_pages(pdf_path, tmpdir, structural_pages, dpi=75)
+        # Small plans (≤ 5 pages): render at 150 DPI so callout text is crisp.
+        # Larger plan sets: 75 DPI to stay within Claude's image size limits.
+        render_dpi = 150 if len(structural_pages) <= 5 else 75
+        imgs = render_pages(pdf_path, tmpdir, structural_pages, dpi=render_dpi)
         if not imgs:
             return None
 
@@ -1189,6 +1218,21 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
     cads_result = try_parse_cads_bar_list(pdf_path)
     if cads_result:
         return cads_result, None
+
+    # ── SMALL PLAN FAST PATH (≤ 5 pages) ─────────────────────────────────────
+    # For small residential/foundation plans (1-5 pages), skip batch scanning
+    # entirely and go straight to holistic pass at 150 DPI. These plans rarely
+    # have bar schedule tables — rebar is defined in design data tables, section
+    # callouts, and pier/grade beam schedules. Batch scanning at low DPI misses
+    # the small text in callouts and returns empty responses.
+    if total <= 5:
+        all_pages = list(range(1, total + 1))
+        result = claude_holistic_pass(pdf_path, tmpdir, all_pages, 1, None)
+        if result and result.get("bars"):
+            result["notes"] = f"[Small plan — {total} pages, direct holistic pass at 150 DPI] " + result.get("notes", "")
+            return result, None
+        # If holistic also failed, return error
+        return None, f"Could not extract rebar data from this {total}-page plan. Plan may be image-only or use a format the AI could not parse."
 
     # Step 1: Score pages by text (fast, no rendering)
     scores = score_pages_by_text(pdf_path, total)
