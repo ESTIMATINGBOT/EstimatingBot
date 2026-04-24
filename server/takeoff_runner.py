@@ -998,7 +998,7 @@ def extract_pdf_text_context(pdf_path):
     qty_m = re.search(r'QUANTITY[^\d]*(\d+)', text)
     if qty_m:
         lines.append(f"DRILLED PIERS QUANTITY: {qty_m.group(1)}")
-    depth_m = re.search(r'DEPTH[^\d]*(\d+)[\'-]', text)
+    depth_m = re.search(r"DEPTH[^\d]*(\d+)['\-]", text)
     if depth_m:
         lines.append(f"PIER DEPTH: {depth_m.group(1)}'")
     dia_m = re.search(r"DIAMETER[^\d]*(\d+)['\"-]", text)
@@ -1017,8 +1017,8 @@ def extract_pdf_text_context(pdf_path):
         lines.append(f"SLAB/BEAM REBAR CALLOUT: {g.strip()}")
 
     # 5. Grade beam schedule
-    gb_w = re.search(r'(?:GRADE\s*BEAM|WIDTH)[^\d]*(\d+)[\'-"]', text)
-    gb_h = re.search(r'HEIGHT[^\d]*(\d+)[\'-"]', text)
+    gb_w = re.search(r"(?:GRADE\s*BEAM|WIDTH)[^\d]*(\d+)['\"-]", text)
+    gb_h = re.search(r"HEIGHT[^\d]*(\d+)['\"-]", text)
     if gb_w: lines.append(f"GRADE BEAM WIDTH: {gb_w.group(1)}")
     if gb_h: lines.append(f"GRADE BEAM HEIGHT: {gb_h.group(1)}")
 
