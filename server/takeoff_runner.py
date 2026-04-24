@@ -251,9 +251,23 @@ def select_pages_to_render(total_pages, scores):
             sampled_text = []
 
         result = sorted(priority | set(sampled_text))
-        # If we still exceed budget (many image pages), keep all image-only + first N text
+        # If we still exceed budget (all/most pages are image-only), fall back to
+        # 3-zone strategy: first 5 + last 40 + evenly sampled middle.
+        # This avoids returning pages 1-80 which skips structural sheets at the end.
         if len(result) > MAX_RENDER_PAGES:
-            result = sorted(image_only_pages | first_pages)[:MAX_RENDER_PAGES]
+            f_pages = list(range(1, min(ALWAYS_INCLUDE_FIRST_N + 1, total_pages + 1)))
+            l_start = max(ALWAYS_INCLUDE_FIRST_N + 1, total_pages - ALWAYS_INCLUDE_LAST_N + 1)
+            l_pages = list(range(l_start, total_pages + 1))
+            zone_anchors = set(f_pages + l_pages)
+            zone_budget  = max(0, MAX_RENDER_PAGES - len(zone_anchors))
+            m_pages = [pg for pg in range(ALWAYS_INCLUDE_FIRST_N + 1, l_start)
+                       if pg not in zone_anchors]
+            if m_pages and zone_budget > 0:
+                m_step = max(1, len(m_pages) // zone_budget)
+                m_sampled = m_pages[::m_step][:zone_budget]
+            else:
+                m_sampled = []
+            result = sorted(zone_anchors | set(m_sampled))[:MAX_RENDER_PAGES]
         return result
 
     selected = set(range(1, min(ALWAYS_INCLUDE_FIRST_N + 1, total_pages + 1)))
