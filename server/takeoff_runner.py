@@ -1834,10 +1834,10 @@ def generate_bid_pdf(takeoff, prices, output_path, customer_name, project_name, 
     # ── ESTIMATE ACCURACY SECTION ───────────────────────────────────────
     acc_pct, acc_label, acc_bullets = compute_confidence(takeoff)
     ACC_COLOR = {
-        "High":     colors.HexColor('#4CAF50'),
-        "Moderate": colors.HexColor('#FF9800'),
-        "Low":      colors.HexColor('#F44336'),
-    }.get(acc_label, LIME)
+        "High":     colors.HexColor('#2E7D32'),  # dark green — white text readable
+        "Moderate": colors.HexColor('#1565C0'),  # dark blue — no clash, white text clear
+        "Low":      colors.HexColor('#B71C1C'),  # dark red — white text readable
+    }.get(acc_label, colors.HexColor('#1565C0'))
 
     # Two-cell row: left=label text, right=colored badge
     acc_tbl = Table(
