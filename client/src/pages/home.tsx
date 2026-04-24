@@ -35,8 +35,8 @@ export default function HomePage() {
       toast({ title: "PDF only", description: "Please upload a PDF plan file.", variant: "destructive" });
       return;
     }
-    if (f.size > 50 * 1024 * 1024) {
-      toast({ title: "File too large", description: "Maximum file size is 50 MB.", variant: "destructive" });
+    if (f.size > 200 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Maximum file size is 200 MB.", variant: "destructive" });
       return;
     }
     setFile(f);
@@ -327,7 +327,7 @@ export default function HomePage() {
                         <div className="flex flex-col items-center gap-2">
                           <Upload className="w-8 h-8 text-muted-foreground" />
                           <p className="font-medium text-sm">Drop PDF here or click to browse</p>
-                          <p className="text-muted-foreground text-xs">PDF up to 50 MB</p>
+                          <p className="text-muted-foreground text-xs">PDF up to 200 MB</p>
                         </div>
                       )}
                     </div>
