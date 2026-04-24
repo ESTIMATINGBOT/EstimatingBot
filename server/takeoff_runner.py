@@ -862,6 +862,13 @@ Before writing any JSON, read and record every number from the plans:
       EXAMPLE: 60 piers × 3 bars × 14 ft depth + 2 ft embed = 180 bars at 16 ft each
       WRONG: "3 #5 vertical bars" with qty=3 — that is PER PIER, multiply by pier count!
 
+      CRITICAL — DO NOT DOUBLE COUNT STUB BARS:
+      When Section A or a detail shows "(3) #5's STUB INTO BEAM" or "EQ. SPC'D STUB INTO BEAM",
+      those ARE the pier vertical bars continuing up into the grade beam — they are the SAME bars.
+      The 2'-0" embedment is already included in length_ft = pier_depth_ft + 2.0.
+      Do NOT create a second line item for stubs/dowels if you already have pier verticals.
+      One bar entry per pier cage — full length from bottom of pier to top of beam.
+
    B) PIER STIRRUPS/TIES:
       stirrups_per_pier = ceil(pier_depth_ft / stirrup_spacing_ft)
       total_stirrups = pier_count × stirrups_per_pier
