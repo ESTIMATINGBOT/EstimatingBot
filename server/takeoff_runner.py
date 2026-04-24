@@ -1936,17 +1936,12 @@ def main():
         takeoff, error_msg = claude_takeoff_all_pages(input_pdf, tmpdir, dpi=50, batch_size=5)
 
     if not takeoff:
-        takeoff = {
-            "project_name": proj_name or "Custom Project",
-            "project_address": "",
-            "bars": [],
-            "dobies_qty": 0,
-            "poly_rolls": 0,
-            "poly_tape_rolls": 0,
-            "tie_wire_rolls": 0,
-            "stake_packs": 0,
-            "notes": f"Automated takeoff failed: {error_msg}. Please contact RCP for a manual estimate."
-        }
+        # No rebar extracted — return failure so the server can notify office and show error to customer
+        print(json.dumps({
+            "success": False,
+            "error": f"Automated takeoff failed: {error_msg}. Please contact RCP for a manual estimate."
+        }))
+        sys.exit(0)
 
     if not proj_name:
         proj_name = takeoff.get("project_name", "Custom Project")

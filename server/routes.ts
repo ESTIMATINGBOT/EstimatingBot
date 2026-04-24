@@ -305,6 +305,27 @@ export async function registerRoutes(httpServer: Server, app: Express) {
         return;
       }
 
+      // Block $0 estimates — plan wasn't readable, notify office and mark failed
+      if (!result.grandTotal || result.grandTotal === 0) {
+        storage.updateBidStatus(bid.id, "failed",
+          "We weren't able to extract rebar data from your plan automatically. Our team has been notified and will prepare your estimate manually — expect a follow-up within 1 business day.");
+        try {
+          const transporter = getTransporter();
+          await transporter.sendMail({
+            from: `"RCP Website Bot" <${process.env.GMAIL_USER}>`,
+            to: "Office@RebarConcreteProducts.com",
+            subject: `[Manual Takeoff Needed] ${customerName} — ${projectName || "unnamed project"}`,
+            html: `<p>The automated takeoff returned $0.00 for a web submission. Manual takeoff required.</p>
+              <p><b>Customer:</b> ${customerName}<br>
+              <b>Email:</b> ${customerEmail}<br>
+              <b>Phone:</b> ${customerPhone}<br>
+              <b>Project:</b> ${projectName || "—"}</p>
+              <p>Please contact the customer and prepare a manual estimate.</p>`,
+          });
+        } catch {}
+        return;
+      }
+
       // Send emails
       const grandTotalStr = result.grandTotal ? `$${result.grandTotal.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}` : "";
       try {

@@ -12,6 +12,13 @@ type StatusData = {
 export default function ThankYouPage() {
   const { bidId } = useParams<{ bidId: string }>();
   const [, navigate] = useLocation();
+  const [elapsed, setElapsed] = useState(0);
+
+  // Track elapsed time so we can show a timeout message
+  useEffect(() => {
+    const interval = setInterval(() => setElapsed(e => e + 1), 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   const statusQuery = useQuery<StatusData>({
     queryKey: ["/api/bids", bidId, "status"],
@@ -27,6 +34,7 @@ export default function ThankYouPage() {
 
   const status = statusQuery.data?.status;
   const message = statusQuery.data?.message;
+  const timedOut = elapsed >= 30 && (status === "pending" || status === "processing" || !status);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -59,7 +67,7 @@ export default function ThankYouPage() {
               <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center">
                 <CheckCircle2 className="w-10 h-10 text-green-600" />
               </div>
-            ) : status === "failed" ? (
+            ) : (status === "failed" || timedOut) ? (
               <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center">
                 <AlertCircle className="w-10 h-10 text-red-600" />
               </div>
@@ -81,13 +89,13 @@ export default function ThankYouPage() {
                   {message || "Check your inbox — your preliminary rebar estimate has been sent."}
                 </p>
               </>
-            ) : status === "failed" ? (
+            ) : (status === "failed" || timedOut) ? (
               <>
                 <h1 className="text-2xl font-bold mb-2" style={{ fontFamily: "'Cabinet Grotesk', sans-serif" }}>
-                  Something went wrong
+                  We couldn't read your plans automatically
                 </h1>
                 <p className="text-muted-foreground">
-                  {message || "Our team has been notified and will follow up with you manually."}
+                  {message || "Our team has been notified and will prepare your estimate manually — expect a follow-up within 1 business day."}
                 </p>
               </>
             ) : (
@@ -137,10 +145,17 @@ export default function ThankYouPage() {
             </div>
           )}
 
-          {status === "failed" && (
+          {(status === "failed" || timedOut) && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-5 text-left space-y-2">
+              <div className="flex items-center gap-2 text-sm font-bold text-red-700">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                Our team has been notified
+              </div>
               <p className="text-xs text-red-700">
-                Our team has been notified. Please contact us directly and we'll prepare your estimate manually.
+                Some plan formats — like image-only PDFs or post-tension slabs without rebar schedules — can't be read automatically. We'll review your plans and send a manual estimate within 1 business day.
+              </p>
+              <p className="text-xs text-red-600 font-medium">
+                Need it faster? Call us directly at 469-631-7730.
               </p>
             </div>
           )}
