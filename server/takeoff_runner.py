@@ -331,6 +331,59 @@ def split_large_pages(image_paths, tmpdir, threshold_px=1568):
     return result
 
 
+def render_page_hires_quads(pdf_path, tmpdir, pg_1based):
+    """
+    Extract embedded image from a PDF page at its native resolution and split
+    into 4 quadrant crops. For 36"x24" sheets scanned at 150 DPI (5400x3600px),
+    each quadrant is 2700x1800px — Claude sees 1568x1045px natively (87px/in)
+    vs 1045x697px from a 50 DPI whole-page render (29px/in). 3x resolution gain.
+    Returns list of quadrant PNG paths, or [] if page has no large embedded image.
+    """
+    try:
+        import fitz as _fitz
+        from PIL import Image as _PILImage
+        import io as _io
+
+        doc = _fitz.open(pdf_path)
+        page = doc[pg_1based - 1]
+        imgs = page.get_images(full=True)
+        if not imgs:
+            doc.close()
+            return []
+
+        # Use the largest embedded image on the page
+        xref = max(imgs, key=lambda x: x[2] * x[3] if len(x) > 3 else 0)[0]
+        base = doc.extract_image(xref)
+        doc.close()
+
+        img = _PILImage.open(_io.BytesIO(base["image"])).convert("RGB")
+        w, h = img.size
+
+        # Only split if image is large enough to benefit (> 3000px on longest side)
+        # Smaller embedded images (thumbnails, diagrams) don't need splitting
+        if max(w, h) < 3000:
+            return []  # let normal render_pages handle small/normal pages
+
+        # Split into 4 quadrants
+        quads = [
+            ("TL", img.crop((0,    0,    w//2, h//2))),
+            ("TR", img.crop((w//2, 0,    w,    h//2))),
+            ("BL", img.crop((0,    h//2, w//2, h   ))),
+            ("BR", img.crop((w//2, h//2, w,    h   ))),
+        ]
+        img.close()
+        paths = []
+        for name, q in quads:
+            qpath = os.path.join(tmpdir, f"pg{pg_1based:04d}-{name}.png")
+            q.save(qpath)
+            q.close()
+            paths.append(qpath)
+        return paths
+
+    except Exception:
+        return []
+
+
 def render_pages(pdf_path, tmpdir, page_numbers, dpi=75):
     """Render specific pages of a PDF to PNG. Tries pdftoppm first, falls back to PyMuPDF."""
     images = []
