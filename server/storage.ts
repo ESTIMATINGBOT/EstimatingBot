@@ -1,11 +1,21 @@
-// File-backed bid store — persists across Railway deploys.
-// Bids are written to /tmp/bids.json so the polling page still works
-// if a deploy happens mid-job. Falls back to memory-only if fs fails.
+// File-backed bid store.
+// STORE_PATH is configurable via BID_STORE_PATH env var.
+// On Railway: mount a persistent volume at /data and set BID_STORE_PATH=/data/rcp_bids.json
+// Falls back to /tmp (wiped on redeploy) if env var not set.
 
 import fs from "fs";
+import path from "path";
 import { type Bid, type InsertBid } from "@shared/schema";
 
-const STORE_PATH = "/tmp/rcp_bids.json";
+const STORE_PATH = process.env.BID_STORE_PATH || "/tmp/rcp_bids.json";
+
+// Ensure the directory exists
+try {
+  const dir = path.dirname(STORE_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+} catch {}
+
+console.log(`[storage] Bid store path: ${STORE_PATH}`);
 
 export interface IStorage {
   createBid(bid: InsertBid & { originalFilename: string; createdAt: string }): Bid;

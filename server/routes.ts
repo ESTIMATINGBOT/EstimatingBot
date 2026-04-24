@@ -453,6 +453,20 @@ export async function registerRoutes(httpServer: Server, app: Express) {
     res.json({ version: "streaming-render", engine: "pymupdf-fitz" });
   });
 
+  // List all bids (admin use)
+  app.get("/api/bids/all", (_req, res) => {
+    const bids = storage.getAllBids().map(b => ({
+      id: b.id,
+      customerName: b.customerName,
+      customerEmail: b.customerEmail,
+      projectName: b.projectName,
+      status: b.status,
+      statusMessage: b.statusMessage,
+      createdAt: b.createdAt,
+    }));
+    res.json({ count: bids.length, storePath: process.env.BID_STORE_PATH || "/tmp/rcp_bids.json", bids });
+  });
+
   // Poll bid status
   app.get("/api/bids/:id/status", (req, res) => {
     const bid = storage.getBid(Number(req.params.id));
