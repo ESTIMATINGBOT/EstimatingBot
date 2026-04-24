@@ -34,6 +34,7 @@ FALLBACK_PRICES = {
     "#4 20'":  7.367,
     "#5 20'":  11.6146,
     "#6 20'":  16.397,
+    "#7 20'":  24.10,
     "FAB":     0.75,       # NEVER CHANGE
     "DOBIE":   0.55,
     "POLY":    95.50,
@@ -62,6 +63,10 @@ def fetch_qbo_prices():
                 prices["#5 20'"] = price
             elif "#6" in name and "20'" in name:
                 prices["#6 20'"] = price
+            elif "#7" in name and "20'" in name:
+                prices["#7 20'"] = price
+            elif "#8" in name and "20'" in name:
+                prices["#8 20'"] = price
             elif "fabrication" in nl or "fabrication-1" in nl:
                 pass  # NEVER update FAB from QBO — always $0.75
             elif "dobie" in nl or "concrete chair" in nl:
@@ -512,7 +517,8 @@ Return a JSON object with this exact structure:
 }}
 
 CRITICAL RULES:
-- Rebar weights per linear foot: #3=0.376, #4=0.668, #5=1.043, #6=1.502, #7=2.044, #8=2.670
+- Rebar weights per linear foot: #3=0.376, #4=0.668, #5=1.043, #6=1.502, #7=2.044, #8=2.670, #9=3.400, #10=4.303
+- Valid bar sizes: #3, #4, #5, #6, #7, #8, #9, #10 — report exactly what is shown on plans
 - For each bar: weight_lbs = qty * length_ft * weight_per_lf
 - type must be: "straight", "l-hook", "u-bar", "stirrup", "ring", or "custom"
 - is_fabricated = true for anything that is bent/shaped (stirrups, hooks, U-bars, rings, ties)
@@ -784,7 +790,8 @@ STEPS:
 5. Apply 7% waste to straight stock bars
 6. Return the full takeoff as JSON
 
-Rebar weights per LF: #3=0.376, #4=0.668, #5=1.043, #6=1.502, #7=2.044, #8=2.670
+Rebar weights per LF: #3=0.376, #4=0.668, #5=1.043, #6=1.502, #7=2.044, #8=2.670, #9=3.400, #10=4.303
+- Valid bar sizes: #3 through #10 — report exactly what is on the plans, do not substitute sizes
 
 Return a JSON object with this exact structure:
 {{
@@ -1251,7 +1258,9 @@ def generate_bid_pdf(takeoff, prices, output_path, customer_name, project_name, 
             fab_sub += ext
         else:
             price_key  = f"{size} 20'"
-            unit_price = prices.get(price_key, prices.get("#4 20'", 7.37))
+            # Use exact match first; if size not in price list (e.g. #8, #9)
+            # flag it with $0.00 so it shows on the bid as needing a manual price
+            unit_price = prices.get(price_key, 0.0)
 
             if length < 20:
                 cuts_per_bar = max(1, int(20 / length))
