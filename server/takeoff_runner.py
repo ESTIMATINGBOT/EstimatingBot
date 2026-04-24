@@ -210,24 +210,51 @@ def select_pages_to_render(total_pages, scores):
     if total_pages <= MAX_RENDER_PAGES:
         return list(range(1, total_pages + 1))
 
-    # If all scores are 0 (large PDF, scoring was skipped), use a 3-zone strategy:
-    # Zone A: first ALWAYS_INCLUDE_FIRST_N pages (cover/index)
-    # Zone B: last ALWAYS_INCLUDE_LAST_N pages (structural sheets cluster at end)
-    # Zone C: evenly sample the middle with remaining budget
+    # If all scores are 0 (large PDF, scoring was skipped), use image-first strategy:
+    # Quickly identify image-only pages (no text) via fitz — these are almost always
+    # structural drawings. Prioritize all of them, then fill budget with text pages.
     all_zero = all(sc == 0 for sc in scores.values())
     if all_zero:
-        first_pages = list(range(1, min(ALWAYS_INCLUDE_FIRST_N + 1, total_pages + 1)))
-        last_start = max(ALWAYS_INCLUDE_FIRST_N + 1, total_pages - ALWAYS_INCLUDE_LAST_N + 1)
-        last_pages = list(range(last_start, total_pages + 1))
-        anchors = set(first_pages + last_pages)
-        remaining_budget = max(0, MAX_RENDER_PAGES - len(anchors))
-        middle_pages = [pg for pg in range(ALWAYS_INCLUDE_FIRST_N + 1, last_start) if pg not in anchors]
-        if middle_pages and remaining_budget > 0:
-            step = max(1, len(middle_pages) // remaining_budget)
-            sampled_middle = middle_pages[::step][:remaining_budget]
+        # Fast fitz scan: get text length per page (reads metadata, minimal RAM)
+        image_only_pages = set()
+        text_pages = set()
+        try:
+            import fitz
+            doc = fitz.open(pdf_path)
+            for i in range(doc.page_count):
+                pg = i + 1
+                try:
+                    t = doc[i].get_text().strip()
+                    if t:
+                        text_pages.add(pg)
+                    else:
+                        image_only_pages.add(pg)
+                except Exception:
+                    image_only_pages.add(pg)  # assume structural if we can't read
+            doc.close()
+        except Exception:
+            # fitz not available — fall back to 3-zone strategy
+            image_only_pages = set()
+            text_pages = set(range(1, total_pages + 1))
+
+        # Always include first N (cover/index) + all image-only pages (drawings)
+        first_pages = set(range(1, min(ALWAYS_INCLUDE_FIRST_N + 1, total_pages + 1)))
+        priority = first_pages | image_only_pages
+        remaining_budget = max(0, MAX_RENDER_PAGES - len(priority))
+
+        # Fill remaining budget with evenly-sampled text pages
+        text_sample = sorted(text_pages - priority)
+        if text_sample and remaining_budget > 0:
+            step = max(1, len(text_sample) // remaining_budget)
+            sampled_text = text_sample[::step][:remaining_budget]
         else:
-            sampled_middle = []
-        return sorted(anchors | set(sampled_middle))[:MAX_RENDER_PAGES]
+            sampled_text = []
+
+        result = sorted(priority | set(sampled_text))
+        # If we still exceed budget (many image pages), keep all image-only + first N text
+        if len(result) > MAX_RENDER_PAGES:
+            result = sorted(image_only_pages | first_pages)[:MAX_RENDER_PAGES]
+        return result
 
     selected = set(range(1, min(ALWAYS_INCLUDE_FIRST_N + 1, total_pages + 1)))
 
