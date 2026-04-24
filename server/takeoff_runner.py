@@ -573,7 +573,13 @@ If the plan shows a DESIGN DATA table or DRILLED PIERS schedule:
     WRONG: outputting qty=3 "per pier" — you MUST multiply by pier count!
   - PIER STIRRUPS: total = pier_count × ceil(pier_depth_ft / stirrup_spacing_ft). is_fabricated=true.
   - GRADE BEAM STIRRUPS: total = ceil(total_beam_LF / stirrup_spacing_ft). is_fabricated=true.
-  - HAIRPINS at intersections: count from plan or estimate ceil(beam_LF×12/spacing_in). is_fabricated=true.
+  - HAIRPINS/TRANSVERSE BARS: count from plan or estimate ceil(total_beam_LF×12/spacing_in).
+    Look in Section A for bars spaced along the beam (NOT pier verticals — those are already
+    counted). "#N's EQ. SPC'D" along a beam = transverse bars, separate entry. is_fabricated=true.
+    Include at least one entry if ANY transverse callout appears — err on including over skipping.
+  - CURB L-BARS: if callout says "TYP. N-PLACES" or "N LOCATIONS", do NOT add a full-perimeter
+    line item — those locations are already captured by the specific-count entry.
+    Only add full-perimeter curb bars if callout says CONT. or ALL EDGES.
   - SLAB MAT: Any "#N @ X\" GRID" or "#N @ X\" O.C. E.W." callout = MANDATORY slab mat entry.
     NEVER skip or replace with curb bars. Sum horizontal dims for W, vertical dims for D.
     bars_EW=ceil(D×12/S)+1, bars_NS=ceil(W×12/S)+1, total_LF=bars_EW×W+bars_NS×D.
@@ -902,18 +908,23 @@ Before writing any JSON, read and record every number from the plans:
       Use the 1.8× multiplier to account for interior runs.
 
    E) HAIRPIN / TRANSVERSE BARS AT GRADE BEAM INTERSECTIONS:
-      These are CRITICAL high-quantity items. Look for ANY of these callouts:
-        - "#N @ X\" O.C." inside or beside a grade beam
-        - "TYPE 17" bars on a CADS-style bar list
-        - Short bent bars (2'–5') at regular intervals shown in section detail
-        - Bars described as hairpins, transverse ties, or cross-ties
-      If a spacing is given along the beam:
-        qty = ceil(total_beam_LF × 12 / spacing_in)
-        cut_length = 2 × beam_width_in / 12 + 2 × 1.5  (U-shape width + hooks)
-      If no spacing is given but the detail shows hairpins at intersections:
-        qty = num_intersections × hairpins_per_intersection (typically 4 per intersection)
+      These are CRITICAL high-quantity items worth hundreds of dollars. Look for ANY of:
+        - "#N @ X\" O.C." or "#N's @ X\" O.C." inside or beside a grade beam in section detail
+        - "TYPE 17" on a CADS bar list
+        - Short bent bars (2'–5') at regular spacing shown in section cut
+        - Bars labeled as hairpins, transverse ties, cross-ties, or bent bars in beam
+        - "#N's EQ. SPC'D" in a section detail that is NOT the pier vertical (if already
+          counted as pier cage steel, do NOT double count — but if it is a SEPARATE detail
+          showing bars spaced along the beam itself, those ARE transverse bars)
+      SECTION A ON PIER+GRADE BEAM PLANS typically shows TWO sets of bars:
+        1. Pier verticals running vertically down into the pier (already counted in A)
+        2. Transverse bars spaced along the beam horizontally (NEW item — count these)
+      If a spacing S" is given along the beam:
+        qty = ceil(total_beam_LF × 12 / S)
+        cut_length = 2 × beam_width_in / 12 + 2 × 1.5  (U-shape: width + hooks)
       is_fabricated = true
-      These bars are frequently the 2nd or 3rd largest item by weight — do NOT skip them.
+      MINIMUM: if you see ANY transverse bar callout in a section detail, output at least
+      one entry — err on the side of including rather than skipping.
 
    F) SLAB MAT (inside the grade beam perimeter) — MANDATORY IF ANY GRID CALLOUT EXISTS:
       A "#N @ X\" GRID" or "#N @ X\" O.C. E.W." callout ALWAYS means a full slab mat.
@@ -954,6 +965,17 @@ Before writing any JSON, read and record every number from the plans:
 4. SECTION DETAILS: Read cage steel from cross-section callouts carefully.
    "(2) #5 ROW, MAX. VERT. SPC 18\"" = 2 longitudinal #5 bars, stirrups @ 18\" O.C.
    Never skip a bar type shown in a section cut.
+
+   CURB / EDGE BARS — READ THE QUALIFIER:
+   "#3 IN CURB w/ #3 'L' @ 12\"" or similar curb bar callouts often have a TYP. qualifier:
+     - If the note says "TYP. 4-PLACES" or "4 LOCATIONS" — those 4 spots are already
+       captured by the '(2) #3 × 4'-0" TYP. 4-PLACES' entry. Do NOT add a second full-
+       perimeter line item of L-bars. The curb detail applies to those 4 specific locations.
+     - Only create a full-perimeter curb bar entry if the callout explicitly says
+       'CONT.' (continuous), 'ALL EDGES', or gives a spacing along the full perimeter
+       without a limited-locations qualifier.
+     - When in doubt, use the specific-locations interpretation — overcounting curb bars
+       by a full perimeter adds 200-300 phantom bars to the estimate.
 
 ━━━ CALCULATION DISCIPLINE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - Show your arithmetic in the description field: e.g. "60 piers × 3 bars × 16.83ft = 180 bars"
