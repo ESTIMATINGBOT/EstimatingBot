@@ -473,10 +473,21 @@ CRITICAL RULES:
 - If dobies/chairs not specified, estimate: 1 per 4 sq ft of slab
 - If poly not called out explicitly on plans, set poly_rolls to 0
 - Return ONLY valid JSON, no markdown fences
-- Be thorough — read every note, detail, section cut, and schedule on each page
-- If a page shows an ICF wall section, extract the vertical and horizontal rebar spacing and quantities
-- If a page shows a footing schedule, extract every footing size and its rebar
-- Do not skip partial or small details
+
+READING BAR SCHEDULES (most important — do not skip any rows):
+- Bar schedule tables have columns like: MARK | BAR SIZE | LENGTH | QTY (or COUNT or NO.)
+- Read EVERY row of the schedule table — each row is a distinct bar entry in your output
+- If a schedule has 20 rows, your bars array must have at least 20 entries from that page
+- Do not summarize or group rows — output one bars[] entry per schedule row
+- Length callouts: if shown in feet-inches (e.g. 8'-6"), convert to decimal feet (8.5)
+- If qty is shown as a formula (e.g. "24 EA"), extract the number (24)
+- Rebar plan views: count bars in each direction separately (EW bars + NS bars = two entries)
+- Slab on grade: if spacing is given (e.g. #4 @ 12" O.C. EW in a 30'x40' slab),
+  calculate qty = (30/1.0 + 1) bars EW + (40/1.0 + 1) bars NS (spacing in feet)
+
+Be thorough — read every note, detail, section cut, schedule, and plan view on each page.
+If a page shows a footing schedule, extract every footing size and its rebar.
+Do not skip partial or small details.
 {unit_count_rule}"""
 
 UNIT_COUNT_RULE_TEMPLATE = """
@@ -559,10 +570,12 @@ SECOND_PASS_SYSTEM_BASE = """You are an expert rebar takeoff estimator. This is 
 Examine every detail on these pages:
 - Look at ALL section cuts, elevation views, and detail bubbles
 - Check general notes for rebar specifications
-- Look for bar schedules, footing schedules, and column schedules
+- Find ALL bar schedule tables — read EVERY row, output one bars[] entry per row
+- Look for footing schedules, column schedules, wall schedules
 - Check for any repeated typical details (TYP.) that apply to multiple locations
 - Look for ICF wall sections showing vertical and horizontal reinforcement spacing
 - Check dimensions and annotations on all structural elements
+- For slab areas: if rebar spacing given, calculate total bar count from slab dimensions
 
 Return the same JSON format as before. If you find the same bars as the first pass found, include them — do NOT omit them just because they were already found.
 
@@ -757,10 +770,6 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
             errors.append(f"Batch {i+1}: no images rendered for pages {start_pg}-{end_pg}")
             continue
 
-        # Split wide landscape pages (36"x24" structural sheets) into L/R halves
-        # so Claude sees native resolution instead of auto-downscaled 1045x697px
-        batch_imgs = split_large_pages(batch_imgs, tmpdir)
-
         result, err = claude_takeoff_batch(
             batch_imgs, label, second_pass=False,
             takeoff_system=takeoff_system,
@@ -790,7 +799,6 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
     for page_nums, label in sparse_batches:
         batch_imgs = render_pages(pdf_path, tmpdir, page_nums, dpi=dpi)
         if batch_imgs:
-            batch_imgs = split_large_pages(batch_imgs, tmpdir)
             result2, _ = claude_takeoff_batch(
                 batch_imgs, label, second_pass=True,
                 takeoff_system=takeoff_system,
@@ -1207,11 +1215,9 @@ def main():
         sys.exit(1)
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        # 50 DPI + batch-3: pages split into L/R halves before sending to Claude
-        # 36"x24" sheets at 50 DPI = 1800x1200px -> split into 900x1200 halves
-        # Claude sees 900x1200 (native, no downscale) vs 1045x697 (downscaled whole page)
-        # batch_size=3 pages x 2 halves = 6 images per API call, ~7MB payload
-        takeoff, error_msg = claude_takeoff_all_pages(input_pdf, tmpdir, dpi=50, batch_size=3)
+        # 50 DPI + batch-5: memory-safe on Railway 512MB
+        # Claude auto-downsizes arch-E sheets identically regardless of DPI above 43
+        takeoff, error_msg = claude_takeoff_all_pages(input_pdf, tmpdir, dpi=50, batch_size=5)
 
     if not takeoff:
         takeoff = {
