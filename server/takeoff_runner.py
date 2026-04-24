@@ -10,7 +10,7 @@ or {"success": false, "error": "..."}
 Pipeline (maximum accuracy):
   1. Render selected pages at 75 DPI via pdftoppm (80-page cap, 3-zone selection)
   2. Send in batches of 8 to Claude (claude-opus-4-5) — ~10 batches for 80-page set
-  3. Any batch returning sparse results (< 8 bars) gets a second pass at higher detail
+  3. Any batch returning sparse results (< 5 bars) gets a second pass at higher detail
   4. Merge all results with smart deduplication (same mark+size+length = one entry)
   5. Pull live QBO pricing, generate branded 4-page RCP bid PDF
 """
@@ -128,14 +128,14 @@ STRUCTURAL_KEYWORDS = [
 
 # Pages that are always useful regardless of keyword score
 ALWAYS_INCLUDE_FIRST_N = 5    # cover, index, general notes
-ALWAYS_INCLUDE_LAST_N  = 40   # structural sheets almost always at end of combined sets
+ALWAYS_INCLUDE_LAST_N  = 80   # structural sheets almost always at end of combined sets
 # After text scoring, keep this many neighbours around each hit page
 NEIGHBOUR_RADIUS = 1
 # Hard cap on rendered pages regardless of PDF size — keeps runtime bounded
 # 80 pages @ 50DPI ~40MB peak RAM on Railway 512MB containers
-MAX_RENDER_PAGES = 80
+MAX_RENDER_PAGES = 160
 # PDFs larger than this skip text scoring (loading huge PDFs into pdfplumber OOMs)
-SKIP_SCORING_BYTES = 50 * 1024 * 1024  # 50 MB
+SKIP_SCORING_BYTES = 200 * 1024 * 1024  # 200 MB — Pro container has plenty of RAM
 
 def score_pages_by_text(pdf_path, total_pages):
     """
@@ -607,6 +607,11 @@ def detect_unit_count(all_images):
         raw = re.sub(r'\s*```$', '', raw)
         result = json.loads(raw)
         count = int(result.get("unit_count", 1))
+        confidence = result.get("confidence", "low")
+        # Only trust unit_count > 1 when Claude is HIGH confidence
+        # Medium/low confidence defaults to 1 — over-multiplying is far worse than under
+        if count > 1 and confidence != "high":
+            return 1
         return max(1, count)
     except Exception:
         return 1  # safe default — no multiplication
@@ -755,6 +760,137 @@ ASCENSION_REBAR_PAGES = [
     121,                    # Group 4: slab/foundation plan
     132, 133, 135,          # Group 5: additional structural details
 ]
+
+
+# ── HOLISTIC CALCULATION PASS ───────────────────────────────────────────────────
+# When batch scanning finds sparse results (plans with no bar schedule tables,
+# only spacing callouts like "#4 @ 12\" O.C."), this second pass sends ALL
+# structural images at once and asks Claude to calculate linear footage from
+# spacings × building dimensions × unit count. This is how the original
+# Ascension Cottages takeoff was produced in a conversational session.
+
+HOLISTIC_SYSTEM = """You are an expert rebar estimator performing a quantity takeoff from structural plans.
+The batch scan of this plan set returned too few bars — the plans likely use spacing callouts
+(e.g. "#4 @ 12\" O.C.") rather than bar schedule tables.
+
+Your job: read ALL the images provided, identify every rebar callout, and CALCULATE actual
+quantities from spacing × dimension × unit count. Do not just copy spacings — compute bar counts.
+
+STEPS:
+1. Identify all slab/footing/wall areas with rebar callouts
+2. Read or estimate dimensions (scale bars, text callouts, grid lines)
+3. Calculate bars in each direction: bars = floor(span / spacing) + 1
+4. Multiply by unit count for typical/repeated elements
+5. Apply 7% waste to straight stock bars
+6. Return the full takeoff as JSON
+
+Rebar weights per LF: #3=0.376, #4=0.668, #5=1.043, #6=1.502, #7=2.044, #8=2.670
+
+Return a JSON object with this exact structure:
+{{
+  "project_name": "Name from plans or 'Custom Project'",
+  "project_address": "Address if shown, else ''",
+  "bars": [
+    {{
+      "mark": "A",
+      "size": "#4",
+      "length_ft": 20,
+      "qty": 50,
+      "type": "straight",
+      "description": "Slab mat 12\" O.C. E.W. — calculated from 30'x40' area",
+      "is_fabricated": false,
+      "weight_lbs": 668.0
+    }}
+  ],
+  "dobies_qty": 500,
+  "poly_rolls": 1,
+  "poly_tape_rolls": 1,
+  "tie_wire_rolls": 2,
+  "stake_packs": 3,
+  "notes": "Holistic pass: quantities calculated from spacings x dimensions"
+}}
+
+CRITICAL:
+- is_fabricated=true for stirrups, hooks, U-bars, rings, ties
+- is_fabricated=false for straight stock bars only
+- Apply 7% waste to straight bars (multiply qty × 1.07, round up)
+- Stirrup cut length: 2×(W+H)+8 inches | Ring: π×D+4 inches
+- Return ONLY valid JSON, no markdown fences
+- Show your dimension source in the description (e.g. "from 34'x34' footprint scaled off grid")
+{unit_count_rule}"""
+
+def claude_holistic_pass(pdf_path, tmpdir, structural_pages, unit_count, takeoff_system):
+    """
+    Send all structural pages at once to Claude with a calculation-oriented prompt.
+    Used when batch scanning returns sparse results (< MIN_BARS_FOR_CONFIDENCE bars total).
+    Returns a takeoff dict or None.
+    """
+    if not ANTHROPIC_API_KEY or not structural_pages:
+        return None
+    try:
+        import anthropic as _anth
+        client = _anth.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+        # Render structural pages at 75 DPI (good quality, manageable size)
+        imgs = render_pages(pdf_path, tmpdir, structural_pages, dpi=75)
+        if not imgs:
+            return None
+
+        # Build message — cap at 20MB base64 total to stay under API limits
+        content = []
+        total_b = 0
+        MAX_PAYLOAD = 20 * 1024 * 1024
+        for img_path in imgs:
+            try:
+                with open(img_path, "rb") as f:
+                    raw = f.read()
+                b64 = base64.standard_b64encode(raw).decode("utf-8")
+                if total_b + len(b64) > MAX_PAYLOAD:
+                    break
+                total_b += len(b64)
+                content.append({"type": "image",
+                                 "source": {"type": "base64",
+                                            "media_type": "image/png",
+                                            "data": b64}})
+            except Exception:
+                pass
+            finally:
+                try: os.remove(img_path)
+                except: pass
+
+        if not content:
+            return None
+
+        # Add instruction text
+        if unit_count and unit_count > 1:
+            unit_rule = UNIT_COUNT_RULE_TEMPLATE.format(unit_count=unit_count)
+        else:
+            unit_rule = NO_REPEAT_RULE
+
+        system = HOLISTIC_SYSTEM.format(unit_count_rule=unit_rule)
+        content.append({"type": "text", "text": (
+            f"These are the structural pages from this plan set ({len(imgs)} pages shown). "
+            f"There are {unit_count} repeating unit(s). "
+            f"Calculate actual rebar quantities from spacings and dimensions visible on the plans. "
+            f"Return full JSON takeoff."
+        )})
+
+        msg = client.messages.create(
+            model="claude-opus-4-5",
+            max_tokens=8192,
+            system=system,
+            messages=[{"role": "user", "content": content}]
+        )
+        raw_txt = msg.content[0].text.strip()
+        raw_txt = re.sub(r'^```(?:json)?\s*', '', raw_txt)
+        raw_txt = re.sub(r'\s*```$', '', raw_txt)
+        result = json.loads(raw_txt)
+        if result and result.get("bars"):
+            result["notes"] = "[Holistic pass] " + result.get("notes", "")
+            return result
+    except Exception as e:
+        pass
+    return None
 
 
 def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
@@ -1008,7 +1144,7 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
                                result.get("poly_rolls", 0) > 0)
             if bar_count > 0 or has_accessories:
                 first_pass_results.append(result)
-                if 0 < bar_count < 5:
+                if 0 < bar_count < 8:  # retry any batch with fewer than 8 bars found
                     sparse_batches.append((page_nums, label))
         elif err:
             errors.append(f"Batch {i+1} ({label}): {err}")
@@ -1035,6 +1171,23 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
     if not all_results:
         err_summary = "; ".join(errors) if errors else "No rebar found in any page batch"
         return None, err_summary
+
+    # ── HOLISTIC PASS TRIGGER ────────────────────────────────────────────────
+    # If batch scanning found very few bars total, the plans likely have spacing
+    # callouts instead of bar schedule tables. Run the holistic calculation pass:
+    # send all structural pages at once with a prompt that calculates from spacings.
+    MIN_BARS_FOR_CONFIDENCE = 10  # fewer than this = suspect, try holistic pass
+    batch_bar_count = sum(len(r.get("bars", [])) for r in all_results)
+    if batch_bar_count < MIN_BARS_FOR_CONFIDENCE:
+        # Identify structural pages to send: last-N pages (most likely structural)
+        structural_candidates = pages_to_render[-min(40, len(pages_to_render)):]
+        holistic = claude_holistic_pass(
+            pdf_path, tmpdir, structural_candidates, unit_count, takeoff_system
+        )
+        if holistic and len(holistic.get("bars", [])) > batch_bar_count:
+            # Holistic pass found more bars — use it as the primary result
+            all_results = [holistic] + all_results
+        # If holistic didn't improve, keep batch results
 
     merged = merge_takeoffs(all_results)
     meta_prefix = " ".join(filter(None, [render_note, f"[Units: {unit_count}]"]))
