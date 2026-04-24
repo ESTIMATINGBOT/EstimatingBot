@@ -517,6 +517,14 @@ Return a JSON object with this exact structure:
   "notes": "Any important notes"
 }}
 
+POST-TENSIONED SLABS:
+- PT strands/tendons are NOT rebar — do NOT quote them. Ignore strand counts, tendon layouts, PT tendon schedules entirely.
+- On PT slab plans, quote ONLY the mild steel reinforcing: hairpins, pier cages/dowels, edge bars, corner bars, beam bottom bars, slab edge ties, and any #3-#10 bar callouts.
+- Hairpins are U-bars (#3 or #4 typically) placed at slab edges and re-entrant corners — count them from the plan or estimate from perimeter if not explicitly scheduled.
+- Pier cages: look for pier detail drawings showing vertical bars + ties/spirals.
+- If a PT plan has no explicit mild steel bar schedule, estimate from the detail cross-sections shown (beam sections, pier details, edge conditions).
+- Note in the output that PT tendons are excluded and are by separate contractor.
+
 CRITICAL RULES:
 - Rebar weights per linear foot: #3=0.376, #4=0.668, #5=1.043, #6=1.502, #7=2.044, #8=2.670, #9=3.400, #10=4.303
 - Valid bar sizes: #3, #4, #5, #6, #7, #8, #9, #10 — report exactly what is shown on plans
@@ -834,6 +842,8 @@ Return a JSON object with this exact structure:
   "stake_packs": 3,
   "notes": "Holistic pass: quantities calculated from spacings x dimensions"
 }}
+
+POST-TENSIONED SLABS: PT strands/tendons are NOT rebar — ignore them entirely. Quote ONLY mild steel: hairpins, pier cages, edge bars, corner bars, beam bottom bars. Note PT tendons excluded.
 
 CRITICAL:
 - is_fabricated=true for stirrups, hooks, U-bars, rings, ties
