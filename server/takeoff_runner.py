@@ -210,65 +210,46 @@ def select_pages_to_render(total_pages, scores):
     if total_pages <= MAX_RENDER_PAGES:
         return list(range(1, total_pages + 1))
 
-    # If all scores are 0 (large PDF, scoring was skipped), use image-first strategy:
-    # Quickly identify image-only pages (no text) via fitz — these are almost always
-    # structural drawings. Prioritize all of them, then fill budget with text pages.
+    # If all scores are 0 (large PDF, scoring was skipped):
+    # 3-zone base: first N + last N + middle sample (guaranteed coverage of end-of-PDF)
+    # Then use fitz to identify image-only pages in the MIDDLE zone and swap them in,
+    # replacing evenly-sampled text pages with the actual drawing pages.
     all_zero = all(sc == 0 for sc in scores.values())
     if all_zero:
-        # Fast fitz scan: get text length per page (reads metadata, minimal RAM)
-        image_only_pages = set()
-        text_pages = set()
+        # Build 3-zone base first (always safe regardless of fitz availability)
+        f_pages  = list(range(1, min(ALWAYS_INCLUDE_FIRST_N + 1, total_pages + 1)))
+        l_start  = max(ALWAYS_INCLUDE_FIRST_N + 1, total_pages - ALWAYS_INCLUDE_LAST_N + 1)
+        l_pages  = list(range(l_start, total_pages + 1))
+        anchors  = set(f_pages + l_pages)
+        budget   = max(0, MAX_RENDER_PAGES - len(anchors))
+        m_pages  = [pg for pg in range(ALWAYS_INCLUDE_FIRST_N + 1, l_start)
+                    if pg not in anchors]
+
+        # Try to identify image-only pages in middle zone via fitz text scan
+        # Only scan middle pages (not last zone — already anchored) to save RAM
+        image_only_middle = set()
         try:
             import fitz
             doc = fitz.open(pdf_path)
-            for i in range(doc.page_count):
-                pg = i + 1
+            for pg in m_pages:  # only scan middle pages, not the full PDF
                 try:
-                    t = doc[i].get_text().strip()
-                    if t:
-                        text_pages.add(pg)
-                    else:
-                        image_only_pages.add(pg)
+                    if not doc[pg - 1].get_text().strip():
+                        image_only_middle.add(pg)
                 except Exception:
-                    image_only_pages.add(pg)  # assume structural if we can't read
+                    image_only_middle.add(pg)
             doc.close()
         except Exception:
-            # fitz not available — fall back to 3-zone strategy
-            image_only_pages = set()
-            text_pages = set(range(1, total_pages + 1))
+            pass  # fitz unavailable — fall through to plain evenly-spaced sample
 
-        # Always include first N (cover/index) + all image-only pages (drawings)
-        first_pages = set(range(1, min(ALWAYS_INCLUDE_FIRST_N + 1, total_pages + 1)))
-        priority = first_pages | image_only_pages
-        remaining_budget = max(0, MAX_RENDER_PAGES - len(priority))
+        # Build middle sample: image-only pages first, then fill with even sample
+        middle_selected = set(image_only_middle)
+        remaining = [pg for pg in m_pages if pg not in middle_selected]
+        fill_budget = max(0, budget - len(middle_selected))
+        if remaining and fill_budget > 0:
+            step = max(1, len(remaining) // fill_budget)
+            middle_selected.update(remaining[::step][:fill_budget])
 
-        # Fill remaining budget with evenly-sampled text pages
-        text_sample = sorted(text_pages - priority)
-        if text_sample and remaining_budget > 0:
-            step = max(1, len(text_sample) // remaining_budget)
-            sampled_text = text_sample[::step][:remaining_budget]
-        else:
-            sampled_text = []
-
-        result = sorted(priority | set(sampled_text))
-        # If we still exceed budget (all/most pages are image-only), fall back to
-        # 3-zone strategy: first 5 + last 40 + evenly sampled middle.
-        # This avoids returning pages 1-80 which skips structural sheets at the end.
-        if len(result) > MAX_RENDER_PAGES:
-            f_pages = list(range(1, min(ALWAYS_INCLUDE_FIRST_N + 1, total_pages + 1)))
-            l_start = max(ALWAYS_INCLUDE_FIRST_N + 1, total_pages - ALWAYS_INCLUDE_LAST_N + 1)
-            l_pages = list(range(l_start, total_pages + 1))
-            zone_anchors = set(f_pages + l_pages)
-            zone_budget  = max(0, MAX_RENDER_PAGES - len(zone_anchors))
-            m_pages = [pg for pg in range(ALWAYS_INCLUDE_FIRST_N + 1, l_start)
-                       if pg not in zone_anchors]
-            if m_pages and zone_budget > 0:
-                m_step = max(1, len(m_pages) // zone_budget)
-                m_sampled = m_pages[::m_step][:zone_budget]
-            else:
-                m_sampled = []
-            result = sorted(zone_anchors | set(m_sampled))[:MAX_RENDER_PAGES]
-        return result
+        return sorted(anchors | middle_selected)[:MAX_RENDER_PAGES]
 
     selected = set(range(1, min(ALWAYS_INCLUDE_FIRST_N + 1, total_pages + 1)))
 
