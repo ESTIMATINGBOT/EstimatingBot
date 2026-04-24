@@ -46,11 +46,14 @@ FALLBACK_PRICES = {
 def fetch_qbo_prices():
     try:
         req = urllib.request.urlopen(QBO_ITEMS_URL, timeout=8)
-        items = json.loads(req.read().decode())
+        payload = json.loads(req.read().decode())
+        # Response shape: {"count":N, "items":[...]} or a bare list
+        items = payload.get("items", payload) if isinstance(payload, dict) else payload
         prices = dict(FALLBACK_PRICES)
         for item in items:
-            name = item.get("Name", "")
-            price = float(item.get("UnitPrice", 0) or 0)
+            # API returns lowercase keys (name/unitPrice) — normalise both casings
+            name  = item.get("name") or item.get("Name") or ""
+            price = float(item.get("unitPrice") or item.get("UnitPrice") or 0)
             if not price:
                 continue
             nl = name.lower()
@@ -70,7 +73,7 @@ def fetch_qbo_prices():
                 prices["#9 20'"] = price
             elif "fabrication" in nl or "fabrication-1" in nl:
                 pass  # NEVER update FAB from QBO — always $0.75
-            elif "dobie" in nl or "concrete chair" in nl:
+            elif ("dobie" in nl or "concrete chair" in nl) and "wire" not in nl:
                 prices["DOBIE"] = price
             elif "poly 10 mil" in nl:
                 prices["POLY"] = price
