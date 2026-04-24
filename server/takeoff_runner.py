@@ -290,6 +290,47 @@ def _render_page_fitz(pdf_path, tmpdir, pg_1based, dpi=75):
     except Exception:
         return None
 
+def split_large_pages(image_paths, tmpdir, threshold_px=1568):
+    """
+    Split wide landscape images (longer side > threshold_px) into left/right halves.
+    Claude auto-downsizes images with longest side > 1568px, so for a 1800x1200 image
+    Claude sees 1045x697. Splitting into 900x1200 halves gives Claude native resolution
+    (no downscale) — effectively 2.7x more detail on large-format structural sheets.
+    Returns expanded list of image paths (original paths replaced with split halves).
+    """
+    try:
+        from PIL import Image as PILImage
+    except ImportError:
+        return image_paths  # Pillow not available, return unchanged
+
+    result = []
+    for img_path in image_paths:
+        try:
+            img = PILImage.open(img_path)
+            w, h = img.size
+            if max(w, h) > threshold_px and w > h:  # wide landscape sheet
+                # Split into left and right halves
+                mid = w // 2
+                base = os.path.splitext(img_path)[0]
+                left_path  = base + "_L.png"
+                right_path = base + "_R.png"
+                img.crop((0, 0, mid, h)).save(left_path)
+                img.crop((mid, 0, w, h)).save(right_path)
+                img.close()
+                result.extend([left_path, right_path])
+                # Remove original to save disk space
+                try:
+                    os.remove(img_path)
+                except Exception:
+                    pass
+            else:
+                img.close()
+                result.append(img_path)
+        except Exception:
+            result.append(img_path)  # fallback: use original
+    return result
+
+
 def render_pages(pdf_path, tmpdir, page_numbers, dpi=75):
     """Render specific pages of a PDF to PNG. Tries pdftoppm first, falls back to PyMuPDF."""
     images = []
@@ -559,7 +600,7 @@ def claude_takeoff_batch(image_paths, batch_label="", second_pass=False, takeoff
         else:
             content.append({
                 "type": "text",
-                "text": f"These are plan pages {batch_label}. Analyze ALL rebar shown and return the JSON takeoff. Apply unit repetition multipliers per your instructions. If no structural/rebar content is visible on these pages, return an empty bars array with dobies_qty=0 and all accessory counts=0."
+                "text": f"These are plan pages {batch_label}. Large-format sheets (36\"x24\") have been split into LEFT and RIGHT halves to maximize your reading resolution — treat paired _L/_R images as one sheet. Analyze ALL rebar shown and return the JSON takeoff. Apply unit repetition multipliers per your instructions. If no structural/rebar content is visible on these pages, return an empty bars array with dobies_qty=0 and all accessory counts=0."
             })
             system = takeoff_system or build_takeoff_system(1)
 
@@ -615,14 +656,13 @@ def merge_takeoffs(results):
         for bar in (r.get("bars") or []):
             key = normalize_bar_key(bar)
             if key in seen_bar_keys:
-                # Same bar spec seen again — SUM quantities across batches.
-                # Different pages may show different cottage/unit schedules with
-                # identical mark/size/length — they must be added, not max'd.
-                # Over-dedup (max) was causing ~35% undercount on multi-unit projects.
+                # Duplicate detected — take the entry with the higher qty.
+                # SUM was tried but caused over-count (same bar on schedule + plan view).
                 existing_idx = seen_bar_keys[key]
-                existing = merged["bars"][existing_idx]
-                existing["qty"] = existing.get("qty", 0) + bar.get("qty", 0)
-                existing["weight_lbs"] = (existing.get("weight_lbs") or 0) + (bar.get("weight_lbs") or 0)
+                existing_qty = merged["bars"][existing_idx].get("qty", 0)
+                new_qty = bar.get("qty", 0)
+                if new_qty > existing_qty:
+                    merged["bars"][existing_idx] = dict(bar)
             else:
                 seen_bar_keys[key] = len(merged["bars"])
                 merged["bars"].append(dict(bar))  # copy to avoid mutation
@@ -717,6 +757,10 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
             errors.append(f"Batch {i+1}: no images rendered for pages {start_pg}-{end_pg}")
             continue
 
+        # Split wide landscape pages (36"x24" structural sheets) into L/R halves
+        # so Claude sees native resolution instead of auto-downscaled 1045x697px
+        batch_imgs = split_large_pages(batch_imgs, tmpdir)
+
         result, err = claude_takeoff_batch(
             batch_imgs, label, second_pass=False,
             takeoff_system=takeoff_system,
@@ -746,6 +790,7 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
     for page_nums, label in sparse_batches:
         batch_imgs = render_pages(pdf_path, tmpdir, page_nums, dpi=dpi)
         if batch_imgs:
+            batch_imgs = split_large_pages(batch_imgs, tmpdir)
             result2, _ = claude_takeoff_batch(
                 batch_imgs, label, second_pass=True,
                 takeoff_system=takeoff_system,
@@ -1162,10 +1207,11 @@ def main():
         sys.exit(1)
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        # 50 DPI + batch-5: memory-safe on Railway 512MB
-        # Claude auto-downsizes arch-E sheets to 1045x1568px regardless of DPI above 43
-        # so 50 DPI == 75 DPI == 100 DPI at Claude's end for large drawings
-        takeoff, error_msg = claude_takeoff_all_pages(input_pdf, tmpdir, dpi=50, batch_size=5)
+        # 50 DPI + batch-3: pages split into L/R halves before sending to Claude
+        # 36"x24" sheets at 50 DPI = 1800x1200px -> split into 900x1200 halves
+        # Claude sees 900x1200 (native, no downscale) vs 1045x697 (downscaled whole page)
+        # batch_size=3 pages x 2 halves = 6 images per API call, ~7MB payload
+        takeoff, error_msg = claude_takeoff_all_pages(input_pdf, tmpdir, dpi=50, batch_size=3)
 
     if not takeoff:
         takeoff = {
