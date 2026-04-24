@@ -34,7 +34,6 @@ FALLBACK_PRICES = {
     "#4 20'":  7.367,
     "#5 20'":  11.6146,
     "#6 20'":  16.397,
-    "#7 20'":  24.10,
     "FAB":     0.75,       # NEVER CHANGE
     "DOBIE":   0.55,
     "POLY":    95.50,
@@ -67,6 +66,8 @@ def fetch_qbo_prices():
                 prices["#7 20'"] = price
             elif "#8" in name and "20'" in name:
                 prices["#8 20'"] = price
+            elif "#9" in name and "20'" in name:
+                prices["#9 20'"] = price
             elif "fabrication" in nl or "fabrication-1" in nl:
                 pass  # NEVER update FAB from QBO — always $0.75
             elif "dobie" in nl or "concrete chair" in nl:
@@ -539,6 +540,21 @@ READING BAR SCHEDULES (most important — do not skip any rows):
 - Rebar plan views: count bars in each direction separately (EW bars + NS bars = two entries)
 - Slab on grade: if spacing is given (e.g. #4 @ 12" O.C. EW in a 30'x40' slab),
   calculate qty = (30/1.0 + 1) bars EW + (40/1.0 + 1) bars NS (spacing in feet)
+
+READING CADS / FABRICATOR BAR LISTS (critical — different column format):
+If you see a table with columns "Item | No. Pcs. | Size | Length | Mark | Type | A | B | C..."
+this is a CADS-USA or fabricator bar list. Read it as follows:
+- "No. Pcs." column = qty (piece count) — this is the quantity to use
+- "Size" column = bar size (#3, #4, etc.)
+- "Length" column = cut length in feet-inches — convert to decimal feet
+- "Mark" column = bar mark identifier
+- "Type" column = bend type code (T2=closed stirrup, 2=L-hook/90-deg bend, straight=no mark)
+- Columns A, B, C, D, E, F... = bend dimensions ONLY — do NOT use these as quantities
+- is_fabricated = true for any bar with a Type code (T2, 2, 3, etc.)
+- is_fabricated = false for straight bars (no Type code, or Type = straight/stock)
+- Do NOT apply 7% waste to fabricated bars — quantities are already exact piece counts
+- Apply 7% waste only to straight stock bars
+- Output one bars[] entry per row — if the list has 15 rows, output 15 entries
 
 Be thorough — read every note, detail, section cut, schedule, and plan view on each page.
 If a page shows a footing schedule, extract every footing size and its rebar.
