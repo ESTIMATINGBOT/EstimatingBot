@@ -916,6 +916,136 @@ def claude_holistic_pass(pdf_path, tmpdir, structural_pages, unit_count, takeoff
     return None
 
 
+def try_parse_cads_bar_list(pdf_path):
+    """
+    Detect and parse a CADS-USA / fabricator bar list from extractable PDF text.
+    Returns a takeoff dict if the PDF matches the format, else None.
+
+    CADS bar list columns: Item | No. Pcs. | Size | Length | Mark | Type | A-K dims
+    The 'No. Pcs.' column is the piece count (quantity).
+    Type codes: T2=closed stirrup, 2/3/4=L-hook or bend, blank=straight stock.
+    """
+    import math as _math
+
+    _WEIGHTS = {"#3":0.376,"#4":0.668,"#5":1.043,"#6":1.502,
+                "#7":2.044,"#8":2.670,"#9":3.400,"#10":4.303}
+
+    def _parse_len(s):
+        """Convert CADS length string (e.g. '8\'2"' or '20\'0"') to decimal feet."""
+        s = s.strip()
+        m = re.match(r"(\d+)'(\d+)", s)
+        if m:
+            return round(int(m.group(1)) + int(m.group(2))/12, 4)
+        m = re.match(r"(\d+)'", s)
+        if m:
+            return float(m.group(1))
+        m = re.match(r'(\d+)"?$', s)
+        if m:
+            return round(int(m.group(1))/12, 4)
+        return None
+
+    def _is_fab(type_code):
+        """Return True if Type column indicates a bent/fabricated bar."""
+        t = (type_code or "").strip()
+        return bool(t and re.match(r'^(T\d+|\d+)$', t))
+
+    # Extract text — try pdftotext first, fall back to pdfplumber
+    text = ""
+    try:
+        r = subprocess.run(["pdftotext", "-layout", pdf_path, "-"],
+                           capture_output=True, text=True, timeout=30)
+        if r.returncode == 0:
+            text = r.stdout
+    except Exception:
+        pass
+    if not text.strip():
+        try:
+            import pdfplumber
+            with pdfplumber.open(pdf_path) as pdf:
+                text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+        except Exception:
+            return None
+
+    # Must look like a CADS bar list
+    if not re.search(r'REBAR.?CAD|CADS.?USA|No\.?\s*Pcs\.', text, re.IGNORECASE):
+        return None
+
+    # Extract project name / material scope from header
+    proj_name = "Custom Project"
+    m = re.search(r'PROJECT\s+([A-Z0-9 &,.-]+)', text)
+    if m:
+        proj_name = m.group(1).strip().title()
+    material_for = ""
+    m = re.search(r'MATERIAL FOR\s+([A-Z0-9 &,.-]+)', text)
+    if m:
+        material_for = m.group(1).strip().title()
+        proj_name = f"{proj_name} \u2014 {material_for}" if material_for else proj_name
+
+    # Parse each data row
+    # Pattern: item(int)  qty(int)  #size  length(ft'in")  [mark]  [type]  [dims...]
+    ROW_RE = re.compile(
+        r'^\s*(\d+)\s+'           # item number
+        r'(\d+)\s+'               # No. Pcs.
+        r'(#\d+)\s+'             # size
+        r"(\d+'\d+\"?)"          # length
+    )
+
+    bars = []
+    for line in text.splitlines():
+        m = ROW_RE.match(line)
+        if not m:
+            continue
+        item  = int(m.group(1))
+        qty   = int(m.group(2))
+        size  = m.group(3)
+        raw_l = m.group(4)
+
+        # Everything after the length field
+        rest = line[m.end():].strip()
+        parts = rest.split()
+        mark  = parts[0] if parts and re.match(r'^[A-Z0-9]+$', parts[0]) else ""
+        tcode = parts[1] if len(parts) > 1 and re.match(r'^(T\d+|\d+)$', parts[1]) else \
+                (parts[0] if parts and re.match(r'^(T\d+|\d+)$', parts[0]) else "")
+
+        length_ft = _parse_len(raw_l)
+        if length_ft is None or qty <= 0:
+            continue
+
+        fab   = _is_fab(tcode)
+        wlf   = _WEIGHTS.get(size, 0)
+
+        # Apply 7% waste to straight stock bars only
+        qty_final = qty if fab else _math.ceil(qty * 1.07)
+        weight    = round(qty_final * length_ft * wlf, 1)
+
+        bend_type = "stirrup" if "T" in tcode else ("l-hook" if tcode else "straight")
+        desc = f"{size} {raw_l} — {'fabricated' if fab else 'stock'}"
+        if mark:
+            desc = f"{mark}: {desc}"
+
+        bars.append({
+            "mark": mark, "size": size, "length_ft": length_ft,
+            "qty": qty_final, "type": bend_type,
+            "is_fabricated": fab, "weight_lbs": weight,
+            "description": desc
+        })
+
+    if len(bars) < 3:
+        return None   # Not enough rows — probably a false positive
+
+    return {
+        "project_name": proj_name,
+        "project_address": "",
+        "bars": bars,
+        "dobies_qty": 0,
+        "poly_rolls": 0,
+        "poly_tape_rolls": 0,
+        "tie_wire_rolls": 0,
+        "stake_packs": 0,
+        "notes": f"[CADS bar list — direct text parse, {len(bars)} line items] All quantities exact from engineer's bar list. 7% waste applied to straight stock bars only."
+    }
+
+
 def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
     """
     Maximum-accuracy STREAMING pipeline (memory-safe for large PDFs):
@@ -1024,6 +1154,14 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
             "notes": "[Known plan set: Ascension Cottages 142-page set] ASTM A615 Gr.60 supplemental rebar — PT slab system. PT tendons by separate sub. 14 cottages + dumpster enclosure + trellis + site elements. Stock bar quantities include 7% waste/lap factor."
         }
         return ascension_takeoff, None
+
+    # ── CADS / FABRICATOR BAR LIST DETECTION ────────────────────────────────
+    # If the PDF contains extractable text matching the CADS-USA bar list format
+    # (Item | No. Pcs. | Size | Length | Mark | Type | A | B | C...),
+    # parse it directly from text — faster, cheaper, and more accurate than image scan.
+    cads_result = try_parse_cads_bar_list(pdf_path)
+    if cads_result:
+        return cads_result, None
 
     # Step 1: Score pages by text (fast, no rendering)
     scores = score_pages_by_text(pdf_path, total)
