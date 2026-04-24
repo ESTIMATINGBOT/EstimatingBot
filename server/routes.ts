@@ -150,7 +150,8 @@ async function sendBidEmails(
   };
 
   // Email to customer
-  await transporter.sendMail({
+  console.log(`[EMAIL] Sending customer email to: "${customerEmail}" for project: "${projectName}"`);
+  const customerInfo = await transporter.sendMail({
     from: `"Rebar Concrete Products" <${process.env.GMAIL_USER || "Office@RebarConcreteProducts.com"}>`,
     to: customerEmail,
     subject: `Your Rebar Estimate — ${projectName}`,
@@ -181,9 +182,10 @@ async function sendBidEmails(
     `,
     attachments: [sharedAttachment],
   });
+  console.log(`[EMAIL] Customer email sent OK — messageId: ${customerInfo.messageId} response: ${customerInfo.response}`);
 
   // Copy to office
-  await transporter.sendMail({
+  const officeInfo = await transporter.sendMail({
     from: `"RCP Website Bot" <${process.env.GMAIL_USER || "Office@RebarConcreteProducts.com"}>`,
     to: "Office@RebarConcreteProducts.com",
     subject: `[New Web Bid] ${projectName} — ${customerName}`,
@@ -199,6 +201,7 @@ async function sendBidEmails(
     `,
     attachments: [sharedAttachment],
   });
+  console.log(`[EMAIL] Office copy sent OK — messageId: ${officeInfo.messageId} response: ${officeInfo.response}`);
 }
 
 // ── ROUTES ────────────────────────────────────────────────────────────────────
@@ -328,6 +331,46 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   });
 
   // ── EMAIL DIAGNOSTIC ────────────────────────────────────────────────────────
+  // GET /api/email-test-full?to=customer@email.com
+  // Simulates the exact sendBidEmails flow (both customer + office) without a PDF
+  app.get("/api/email-test-full", async (req, res) => {
+    const to = (req.query.to as string) || "";
+    if (!to) return res.status(400).json({ error: "Provide ?to=email param" });
+
+    const gmailUser = process.env.GMAIL_USER || "(not set)";
+    const transporter = getTransporter();
+    const log: string[] = [];
+    try {
+      await transporter.verify();
+      log.push("SMTP verify: OK");
+
+      // Step 1: customer email (no attachment for this test)
+      log.push(`Sending customer email to: "${to}"`);
+      const ci = await transporter.sendMail({
+        from: `"Rebar Concrete Products" <${gmailUser}>`,
+        to,
+        subject: `Your Rebar Estimate — TEST PROJECT`,
+        html: `<p>Hi Test Customer,</p><p>This is a simulated estimate email. SMTP is working if you received this.</p>`,
+      });
+      log.push(`Customer email sent: ${ci.messageId} | ${ci.response}`);
+
+      // Step 2: office copy
+      log.push(`Sending office copy to: "Office@RebarConcreteProducts.com"`);
+      const oi = await transporter.sendMail({
+        from: `"RCP Website Bot" <${gmailUser}>`,
+        to: "Office@RebarConcreteProducts.com",
+        subject: `[New Web Bid] TEST PROJECT — Test Customer`,
+        html: `<p>This is a simulated office copy email for diagnostic purposes.</p>`,
+      });
+      log.push(`Office email sent: ${oi.messageId} | ${oi.response}`);
+
+      res.json({ success: true, gmailUser, to, log });
+    } catch (err: any) {
+      log.push(`ERROR: ${err.message}`);
+      res.json({ success: false, gmailUser, to, log, error: err.message, code: err.code });
+    }
+  });
+
   // GET /api/email-test?to=someone@example.com
   // Sends a test email and returns full SMTP result or error details
   app.get("/api/email-test", async (req, res) => {
