@@ -1,9 +1,11 @@
-// Pure in-memory bid store — no native SQLite dependency.
-// Bids only need to survive long enough for the customer to poll status
-// (a few minutes). This avoids the better-sqlite3 native addon which
-// causes segfaults on Railway due to architecture mismatches.
+// File-backed bid store — persists across Railway deploys.
+// Bids are written to /tmp/bids.json so the polling page still works
+// if a deploy happens mid-job. Falls back to memory-only if fs fails.
 
+import fs from "fs";
 import { type Bid, type InsertBid } from "@shared/schema";
+
+const STORE_PATH = "/tmp/rcp_bids.json";
 
 export interface IStorage {
   createBid(bid: InsertBid & { originalFilename: string; createdAt: string }): Bid;
@@ -12,9 +14,38 @@ export interface IStorage {
   getAllBids(): Bid[];
 }
 
-class MemoryStorage implements IStorage {
+class FileStorage implements IStorage {
   private bids: Map<number, Bid> = new Map();
   private nextId = 1;
+
+  constructor() {
+    this._load();
+  }
+
+  private _load() {
+    try {
+      if (fs.existsSync(STORE_PATH)) {
+        const raw = JSON.parse(fs.readFileSync(STORE_PATH, "utf8"));
+        this.bids = new Map(raw.bids.map((b: Bid) => [b.id, b]));
+        this.nextId = raw.nextId ?? (Math.max(0, ...raw.bids.map((b: Bid) => b.id)) + 1);
+      }
+    } catch {
+      // corrupt or missing — start fresh
+      this.bids = new Map();
+      this.nextId = 1;
+    }
+  }
+
+  private _save() {
+    try {
+      fs.writeFileSync(STORE_PATH, JSON.stringify({
+        nextId: this.nextId,
+        bids: Array.from(this.bids.values()),
+      }), "utf8");
+    } catch {
+      // /tmp not writable in some environments — continue without persistence
+    }
+  }
 
   createBid(data: InsertBid & { originalFilename: string; createdAt: string }): Bid {
     const bid: Bid = {
@@ -30,6 +61,7 @@ class MemoryStorage implements IStorage {
       createdAt: data.createdAt,
     };
     this.bids.set(bid.id, bid);
+    this._save();
     return bid;
   }
 
@@ -43,6 +75,7 @@ class MemoryStorage implements IStorage {
     bid.status = status;
     bid.statusMessage = message ?? null;
     bid.pdfPath = pdfPath ?? null;
+    this._save();
     return bid;
   }
 
@@ -51,4 +84,4 @@ class MemoryStorage implements IStorage {
   }
 }
 
-export const storage = new MemoryStorage();
+export const storage = new FileStorage();
