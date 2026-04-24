@@ -327,6 +327,56 @@ export async function registerRoutes(httpServer: Server, app: Express) {
     })();
   });
 
+  // ── EMAIL DIAGNOSTIC ────────────────────────────────────────────────────────
+  // GET /api/email-test?to=someone@example.com
+  // Sends a test email and returns full SMTP result or error details
+  app.get("/api/email-test", async (req, res) => {
+    const to = (req.query.to as string) || process.env.GMAIL_USER || "";
+    const gmailUser = process.env.GMAIL_USER || "(not set)";
+    const hasPassword = !!(process.env.GMAIL_APP_PASSWORD && process.env.GMAIL_APP_PASSWORD.length > 0);
+    const passwordLength = process.env.GMAIL_APP_PASSWORD ? process.env.GMAIL_APP_PASSWORD.length : 0;
+
+    if (!to) {
+      return res.status(400).json({ error: "Provide ?to=email param" });
+    }
+
+    const transporter = getTransporter();
+    try {
+      // Verify SMTP connection first
+      await transporter.verify();
+      // Send test email
+      const info = await transporter.sendMail({
+        from: `"RCP Email Test" <${gmailUser}>`,
+        to,
+        subject: `RCP EstimatingBot — SMTP Test ${new Date().toISOString()}`,
+        html: `<p>This is a diagnostic test email from the RCP EstimatingBot.</p>
+               <p>If you received this, SMTP is working correctly.</p>
+               <p>Sent at: ${new Date().toISOString()}</p>`,
+      });
+      res.json({
+        success: true,
+        to,
+        gmailUser,
+        hasPassword,
+        passwordLength,
+        messageId: info.messageId,
+        response: info.response,
+      });
+    } catch (err: any) {
+      res.json({
+        success: false,
+        to,
+        gmailUser,
+        hasPassword,
+        passwordLength,
+        error: err.message,
+        code: err.code,
+        responseCode: err.responseCode,
+        command: err.command,
+      });
+    }
+  });
+
   // Version / health probe
   app.get("/api/version", (_req, res) => {
     res.json({ version: "streaming-render", engine: "pymupdf-fitz" });
