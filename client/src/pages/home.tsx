@@ -1,6 +1,6 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
 export default function HomePage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({
@@ -28,6 +29,20 @@ export default function HomePage() {
   const [inputMode, setInputMode] = useState<"upload" | "link">("upload");
   const [dragOver, setDragOver] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Reset form and clear any cached bid status queries when landing on home page.
+  // This ensures "Submit Another Plan" always starts completely fresh.
+  useEffect(() => {
+    setForm({ customerName: "", customerEmail: "", customerPhone: "", projectName: "" });
+    setFile(null);
+    setPlanUrl("");
+    setInputMode("upload");
+    setErrors({});
+    // Wipe all cached bid status data so the new thank-you page polls fresh
+    queryClient.removeQueries({ queryKey: ["/api/bids"] });
+    // Reset the file input element if it exists
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []); // runs once on mount — every navigation to "/" creates a fresh component instance
 
   // File handling
   const handleFile = (f: File) => {
