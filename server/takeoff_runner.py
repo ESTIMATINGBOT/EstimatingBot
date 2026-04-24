@@ -364,21 +364,17 @@ def render_page_hires_quads(pdf_path, tmpdir, pg_1based):
         if max(w, h) < 3000:
             return []  # let normal render_pages handle small/normal pages
 
-        # Split into 4 quadrants
-        quads = [
-            ("TL", img.crop((0,    0,    w//2, h//2))),
-            ("TR", img.crop((w//2, 0,    w,    h//2))),
-            ("BL", img.crop((0,    h//2, w//2, h   ))),
-            ("BR", img.crop((w//2, h//2, w,    h   ))),
-        ]
+        # Save full page at native resolution (no splitting).
+        # 5400x3600 -> Claude downscales to 1568x1045px.
+        # Splitting (quadrants or strips) caused duplicate bar reads within one call
+        # because bar schedules appeared in multiple crop regions.
+        # Single full-page extraction gives better resolution than 50 DPI re-render
+        # (5400px native vs 1800px at 50 DPI -> Claude sees same 1568px wide, but
+        # the source image is losslessly extracted, not re-rasterized at low DPI).
+        out_path = os.path.join(tmpdir, f"pg{pg_1based:04d}-native.png")
+        img.save(out_path)
         img.close()
-        paths = []
-        for name, q in quads:
-            qpath = os.path.join(tmpdir, f"pg{pg_1based:04d}-{name}.png")
-            q.save(qpath)
-            q.close()
-            paths.append(qpath)
-        return paths
+        return [out_path]
 
     except Exception:
         return []
