@@ -782,6 +782,13 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
     # Step 1: Score pages by text (fast, no rendering)
     scores = score_pages_by_text(pdf_path, total)
     pages_to_render = select_pages_to_render(total, scores)
+
+    # For known plan sets: exclude confirmed rebar pages from the general batch pass
+    # since Step 3b already reads them at 3x resolution. Prevents double-counting.
+    if total == 142:
+        hires_set = set(ASCENSION_REBAR_PAGES)
+        pages_to_render = [p for p in pages_to_render if p not in hires_set]
+
     text_hits = sum(1 for s in scores.values() if s > 0)
     filtered = len(pages_to_render) < total
 
