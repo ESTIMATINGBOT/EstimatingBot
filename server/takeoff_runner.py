@@ -574,6 +574,10 @@ If the plan shows a DESIGN DATA table or DRILLED PIERS schedule:
   - PIER STIRRUPS: total = pier_count × ceil(pier_depth_ft / stirrup_spacing_ft). is_fabricated=true.
   - GRADE BEAM STIRRUPS: total = ceil(total_beam_LF / stirrup_spacing_ft). is_fabricated=true.
   - HAIRPINS at intersections: count from plan or estimate ceil(beam_LF×12/spacing_in). is_fabricated=true.
+  - SLAB MAT: Any "#N @ X\" GRID" or "#N @ X\" O.C. E.W." callout = MANDATORY slab mat entry.
+    NEVER skip or replace with curb bars. Calculate: sum dimension strings for W and D,
+    bars_EW=ceil(D×12/S)+1, bars_NS=ceil(W×12/S)+1, total_LF=bars_EW×W+bars_NS×D,
+    bars_40ft=ceil(total_LF/40×1.07). is_fabricated=false. Show all arithmetic in description.
   - Show arithmetic in every description field: "60 piers × 3 bars × 16.83ft = 180 bars"
 
 Be thorough — read every note, detail, section cut, schedule, and plan view on each page.
@@ -883,9 +887,30 @@ Before writing any JSON, read and record every number from the plans:
       cut_length = 2 × beam_width_in / 12 + 2 × 1.5  (hairpin width + hooks)
       is_fabricated = true
 
-   F) SLAB MAT (inside the grade beam perimeter):
-      Same as spacing callout calculation using interior slab dimensions.
-      Use #3 or #4 at the specified spacing. Apply 7% waste if stock length.
+   F) SLAB MAT (inside the grade beam perimeter) — MANDATORY IF ANY GRID CALLOUT EXISTS:
+      A "#N @ X\" GRID" or "#N @ X\" O.C. E.W." callout ALWAYS means a full slab mat.
+      This is NEVER just a curb or edge bar — it covers the entire interior slab area.
+      YOU MUST include a slab mat entry any time you see a GRID callout. Skipping it is wrong.
+
+      CALCULATION:
+        Step 1: Determine interior slab dimensions.
+                Use the dimension strings provided in the text context.
+                Sum the strings along each axis to get total width W and total depth D.
+                For an L-shaped or irregular plan, estimate interior area as ~80% of W×D.
+        Step 2: Calculate bar counts at the given spacing S (inches):
+                bars_EW = ceil(D×12 / S) + 1    (bars running East-West, spanning width W)
+                bars_NS = ceil(W×12 / S) + 1    (bars running North-South, spanning depth D)
+        Step 3: Total LF = bars_EW × W + bars_NS × D
+        Step 4: Since slab mat bars are cut to span the slab they will almost never be
+                exactly 20' or 40'. Use 40' stock bars and calculate:
+                bars_40ft = ceil(total_LF / 40)
+                Apply 7% waste: bars_final = ceil(bars_40ft × 1.07)
+                is_fabricated = false (these are straight stock bars)
+        Step 5: Show full arithmetic in description:
+                e.g. "Slab mat #3 @ 12\" GRID: W=82ft, D=60ft.
+                      EW: ceil(60×12/12)+1=61 bars × 82ft=5,002LF.
+                      NS: ceil(82×12/12)+1=83 bars × 60ft=4,980LF.
+                      Total=9,982LF ÷ 40ft=250 bars × 1.07=268 × 40' bars"
 
 4. SECTION DETAILS: Read cage steel from cross-section callouts carefully.
    "(2) #5 ROW, MAX. VERT. SPC 18\"" = 2 longitudinal #5 bars, stirrups @ 18\" O.C.
