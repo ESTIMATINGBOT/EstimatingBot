@@ -1659,22 +1659,35 @@ def generate_bid_pdf(takeoff, prices, output_path, customer_name, project_name, 
     story.append(hdr_tbl)
     story.append(Spacer(1,4))
 
-    CW = [0.35*inch, 0.5*inch, 0.7*inch, 0.75*inch, 1.9*inch, 0.85*inch, 0.85*inch]
-    rebar_hdr = [['MK','SIZE','LENGTH','QTY','DESCRIPTION','UNIT PRICE','EXT PRICE']]
+    # Column widths: MK | SIZE | LEN | QTY | DESCRIPTION (wide) | UNIT PRICE | EXT PRICE
+    # Total must equal CONTENT_W = 7.3"
+    CW = [0.55*inch, 0.45*inch, 0.55*inch, 0.45*inch, 3.0*inch, 0.95*inch, 0.9*inch]
+    rebar_hdr = [['MK','SIZE','LEN','QTY','DESCRIPTION','UNIT PRICE','EXT PRICE']]
     rebar_rows = []
     for r in rebar_lines:
         rebar_rows.append([
-            r['mark'], r['size'], f"{r['length']:.0f}'", str(r['qty']),
-            r['desc'][:38], fmt(r['unit_price']), fmt(r['ext'])
+            r['mark'] or '—', r['size'],
+            f"{r['length']:.0f}'",
+            str(r['qty']),
+            Paragraph(r['desc'], ps('td', 7, False, BODY)),
+            fmt(r['unit_price']), fmt(r['ext'])
         ])
     for f in fab_lines:
+        # Show mark, size, length rounded, qty — description clean, unit price as $/lb
+        fab_desc = f['desc']
+        # Strip any injected [custom length...] note from description for cleanliness
+        fab_desc = re.sub(r'\s*\[custom length[^\]]*\]', '', fab_desc).strip()
         rebar_rows.append([
-            f['mark'], f['size'], f"{f['length']:.0f}'", str(f['qty']),
-            f"FABRICATED – {f['desc'][:28]}", fmt(f['unit_price'])+'/lb', fmt(f['ext'])
+            f['mark'] or '—', f['size'],
+            f"{f['length']:.0f}'",
+            str(f['qty']),
+            Paragraph(f'FABRICATED — {fab_desc}', ps('td', 7, False, BODY)),
+            '$0.75/lb', fmt(f['ext'])
         ])
     if dobies:
         rebar_rows.append(['', 'DOBIE', '3"', str(dobies),
-            'Concrete Chair 3"×3"×2"', fmt(prices['DOBIE']), fmt(ext_dob)])
+            Paragraph('Concrete Chair 3"×3"×2"', ps('td', 7, False, BODY)),
+            fmt(prices.get('DOBIE', 0.55)), fmt(ext_dob)])
 
     all_rows = rebar_hdr + rebar_rows
     t = Table(all_rows, colWidths=CW, repeatRows=1)
@@ -1683,12 +1696,16 @@ def generate_bid_pdf(takeoff, prices, output_path, customer_name, project_name, 
         ('TEXTCOLOR',(0,0),(-1,0),WHITE),
         ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
         ('FONTSIZE',(0,0),(-1,-1),8),
+        ('FONTSIZE',(0,0),(-1,0),8),
         ('ALIGN',(0,0),(-1,-1),'CENTER'),
         ('ALIGN',(4,1),(4,-1),'LEFT'),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
         ('ALIGN',(5,1),(6,-1),'RIGHT'),
-        ('GRID',(0,0),(-1,-1),0.5,colors.HexColor('#cccccc')),
-        ('BOTTOMPADDING',(0,0),(-1,-1),4),
-        ('TOPPADDING',(0,0),(-1,-1),3),
+        ('GRID',(0,0),(-1,-1),0.5,colors.HexColor('#dddddd')),
+        ('BOTTOMPADDING',(0,0),(-1,-1),5),
+        ('TOPPADDING',(0,0),(-1,-1),4),
+        ('LEFTPADDING',(4,1),(4,-1),4),
+        ('RIGHTPADDING',(5,1),(6,-1),4),
     ])
     for i in range(1, len(all_rows)):
         if i % 2 == 0:
@@ -1806,42 +1823,44 @@ def generate_bid_pdf(takeoff, prices, output_path, customer_name, project_name, 
 
     # ── ESTIMATE ACCURACY SECTION ───────────────────────────────────────
     acc_pct, acc_label, acc_bullets = compute_confidence(takeoff)
-    # Color: High=lime, Moderate=orange, Low=red
     ACC_COLOR = {
         "High":     colors.HexColor('#4CAF50'),
         "Moderate": colors.HexColor('#FF9800'),
         "Low":      colors.HexColor('#F44336'),
     }.get(acc_label, LIME)
 
-    # Header row: "ESTIMATE ACCURACY" label + badge
-    acc_header = Table(
-        [[Paragraph('ESTIMATE ACCURACY', ps('ah',10,True,CHARCOAL)),
-          Paragraph(f'{acc_label} — {acc_pct}', ps('ab',10,True,WHITE))]],
-        colWidths=[3.5*inch, 3.5*inch]
+    # Two-cell row: left=label text, right=colored badge
+    acc_tbl = Table(
+        [[Paragraph('<b>ESTIMATE ACCURACY</b>', ps('ah', 10, False, CHARCOAL)),
+          Paragraph(f'<b>{acc_label} — {acc_pct}</b>', ps('ab', 9, False, WHITE, TA_CENTER))]],
+        colWidths=[CONTENT_W - 1.6*inch, 1.6*inch]
     )
-    acc_header.setStyle(TableStyle([
-        ('BACKGROUND', (1,0),(1,0), ACC_COLOR),
-        ('ALIGN',      (1,0),(1,0), 'CENTER'),
-        ('VALIGN',     (0,0),(-1,0),'MIDDLE'),
-        ('TOPPADDING', (1,0),(1,0), 5),
-        ('BOTTOMPADDING',(1,0),(1,0),5),
-        ('LEFTPADDING', (1,0),(1,0),6),
-        ('RIGHTPADDING',(1,0),(1,0),6),
-        ('ROUNDEDCORNERS',(1,0),(1,0),3),
+    acc_tbl.setStyle(TableStyle([
+        ('BACKGROUND',    (1,0),(1,0), ACC_COLOR),
+        ('ALIGN',         (0,0),(0,0), 'LEFT'),
+        ('ALIGN',         (1,0),(1,0), 'CENTER'),
+        ('VALIGN',        (0,0),(-1,0),'MIDDLE'),
+        ('TOPPADDING',    (0,0),(-1,0), 6),
+        ('BOTTOMPADDING', (0,0),(-1,0), 6),
+        ('LEFTPADDING',   (0,0),(0,0),  0),
+        ('LEFTPADDING',   (1,0),(1,0),  4),
+        ('RIGHTPADDING',  (1,0),(1,0),  4),
     ]))
-    story.append(acc_header)
-    story.append(Spacer(1,4))
-
+    story.append(acc_tbl)
+    story.append(Spacer(1, 4))
     for bullet in acc_bullets:
-        story.append(Paragraph(f'•  {bullet}', ps('ab2',8,False,MID_GRAY)))
-    story.append(Spacer(1,12))
+        story.append(Paragraph(f'•  {bullet}', ps('ab2', 8, False, MID_GRAY)))
+    story.append(Spacer(1, 12))
 
     # ── TECHNICAL NOTES ────────────────────────────────────────────
     notes = takeoff.get("notes", "")
     if notes:
-        story.append(Paragraph('NOTES', ps('nh',10,True,CHARCOAL)))
-        story.append(Paragraph(notes, ps('nb',8,False,MID_GRAY)))
-        story.append(Spacer(1,8))
+        # Strip internal pipeline metadata prefix before displaying to customer
+        clean_notes = re.sub(r'^(\[Pages:[^\]]*\]\s*)(\[Units:[^\]]*\]\s*)?', '', notes).strip()
+        if clean_notes:
+            story.append(Paragraph('NOTES', ps('nh',10,True,CHARCOAL)))
+            story.append(Paragraph(clean_notes, ps('nb',8,False,MID_GRAY)))
+            story.append(Spacer(1,8))
 
     story.append(Paragraph(
         'This is a PRELIMINARY ESTIMATE for bidding purposes only. All quantities are approximate. '
