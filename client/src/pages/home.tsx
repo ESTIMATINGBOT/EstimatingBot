@@ -118,11 +118,11 @@ export default function HomePage() {
               <span className="text-white font-semibold text-lg tracking-wide" style={{ fontFamily: "'Cabinet Grotesk', sans-serif" }}> CONCRETE PRODUCTS</span>
             </div>
           </div>
-          <div className="hidden sm:flex flex-col items-end text-right text-xs leading-6 text-gray-300">
-            <span>2112 N Custer Rd — McKinney, TX 75071</span>
-            <a href="tel:4696317730" className="hover:text-[#C8D400] transition-colors">469-631-7730</a>
+          <div className="hidden sm:flex flex-col items-end text-right leading-7 text-gray-300">
+            <span className="text-sm font-semibold text-white">2112 N Custer Rd — McKinney, TX 75071</span>
+            <a href="tel:4696317730" className="text-[#C8D400] font-extrabold text-xl tracking-wide hover:text-white transition-colors">469-631-7730</a>
             <a href="https://rebarconcreteproducts.com" target="_blank" rel="noopener noreferrer"
-              className="hover:text-[#C8D400] transition-colors">
+              className="text-sm hover:text-[#C8D400] transition-colors">
               rebarconcreteproducts.com
             </a>
           </div>

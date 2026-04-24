@@ -39,11 +39,11 @@ export default function ThankYouPage() {
               <span className="text-white font-semibold text-lg tracking-wide" style={{ fontFamily: "'Cabinet Grotesk', sans-serif" }}> CONCRETE PRODUCTS</span>
             </div>
           </div>
-          <div className="hidden sm:flex flex-col items-end text-right text-xs leading-6 text-gray-300">
-            <span>2112 N Custer Rd — McKinney, TX 75071</span>
-            <a href="tel:4696317730" className="hover:text-[#C8D400] transition-colors">469-631-7730</a>
+          <div className="hidden sm:flex flex-col items-end text-right leading-7 text-gray-300">
+            <span className="text-sm font-semibold text-white">2112 N Custer Rd — McKinney, TX 75071</span>
+            <a href="tel:4696317730" className="text-[#C8D400] font-extrabold text-xl tracking-wide hover:text-white transition-colors">469-631-7730</a>
             <a href="https://rebarconcreteproducts.com" target="_blank" rel="noopener noreferrer"
-              className="hover:text-[#C8D400] transition-colors">rebarconcreteproducts.com</a>
+              className="text-sm hover:text-[#C8D400] transition-colors">rebarconcreteproducts.com</a>
           </div>
         </div>
         <div className="h-[3px] bg-[#C8D400]" />
@@ -96,7 +96,7 @@ export default function ThankYouPage() {
                   Processing your plans...
                 </h1>
                 <p className="text-muted-foreground">
-                  {message || "Our AI is reading your plans and building your estimate. This takes 1–3 minutes."}
+                  {message || "Our AI is reading your plans and building your estimate. This typically takes 5–15 minutes depending on plan size."}
                 </p>
               </>
             )}
@@ -111,22 +111,28 @@ export default function ThankYouPage() {
               </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Clock className="w-4 h-4 shrink-0" />
-                <span>Typically completes in 1–3 minutes</span>
+                <span>Typically 5–15 minutes depending on plan size</span>
               </div>
               <p className="text-xs text-muted-foreground">
-                You can close this page — the estimate will be delivered to your email when complete.
+                You can safely close this page — we'll email your estimate directly when it's ready.
               </p>
             </div>
           )}
 
           {status === "complete" && (
-            <div className="bg-green-50 border border-green-200 rounded-xl p-5 text-left space-y-2">
-              <div className="flex items-center gap-2 text-sm font-medium text-green-700">
-                <Mail className="w-4 h-4" />
-                Estimate delivered to your inbox
+            <div className="bg-green-50 border border-green-200 rounded-xl p-5 text-left space-y-3">
+              <div className="flex items-center gap-2 text-sm font-bold text-green-700">
+                <Mail className="w-4 h-4 shrink-0" />
+                Your estimate has been sent to your inbox
               </div>
+              {message && (
+                <p className="text-base font-semibold text-green-800">{message}</p>
+              )}
+              <p className="text-xs text-green-700">
+                Check your inbox (and spam folder just in case). A copy has also been sent to our team.
+              </p>
               <p className="text-xs text-green-600">
-                A copy has also been sent to our team. To place an order or ask questions, contact us below.
+                Ready to place an order or have questions? Call or email us below — we're here Mon–Fri, 6 AM–3 PM CST.
               </p>
             </div>
           )}
