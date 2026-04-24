@@ -371,6 +371,34 @@ export async function registerRoutes(httpServer: Server, app: Express) {
     }
   });
 
+  // GET /api/email-test-bid?to=customer@email.com
+  // Runs the exact sendBidEmails() code path with a tiny dummy PDF attachment
+  app.get("/api/email-test-bid", async (req, res) => {
+    const to = (req.query.to as string) || "";
+    if (!to) return res.status(400).json({ error: "Provide ?to=email param" });
+
+    // Create a minimal valid PDF in /tmp
+    const testPdfPath = path.join(os.tmpdir(), `rcp_email_test_${Date.now()}.pdf`);
+    const minimalPdf = Buffer.from(
+      "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj " +
+      "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj " +
+      "3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R>>endobj " +
+      "xref\n0 4\n0000000000 65535 f\n0000000009 00000 n\n" +
+      "0000000058 00000 n\n0000000115 00000 n\n" +
+      "trailer<</Size 4/Root 1 0 R>>\nstartxref\n190\n%%EOF"
+    );
+    fs.writeFileSync(testPdfPath, minimalPdf);
+
+    try {
+      await sendBidEmails(testPdfPath, "Test Customer", to, "5551234567", "Email Test Project");
+      fs.unlinkSync(testPdfPath);
+      res.json({ success: true, to, message: "sendBidEmails() completed without error — check inbox and Office@RebarConcreteProducts.com" });
+    } catch (err: any) {
+      try { fs.unlinkSync(testPdfPath); } catch {}
+      res.json({ success: false, to, error: err.message, code: err.code });
+    }
+  });
+
   // GET /api/email-test?to=someone@example.com
   // Sends a test email and returns full SMTP result or error details
   app.get("/api/email-test", async (req, res) => {
