@@ -1374,6 +1374,98 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
 
 
 
+# ── CONFIDENCE RATING ────────────────────────────────────────────────────────
+def compute_confidence(takeoff):
+    """
+    Inspect how the takeoff was produced and return:
+      accuracy_pct  : str  e.g. "±3%"  "±15%"  "±35%"
+      accuracy_label: str  e.g. "High"  "Moderate"  "Low"
+      confidence_notes: list[str]  — bullet points explaining factors
+    """
+    notes = (takeoff.get("notes") or "").lower()
+    bar_count = len(takeoff.get("bars") or [])
+
+    factors    = []   # things reducing accuracy
+    positives  = []   # things boosting accuracy
+    pct_low    = 2    # optimistic bound
+    pct_high   = 5    # pessimistic bound
+
+    # ── Source detection ──────────────────────────────────────────────────────
+    if "cads bar list" in notes or "direct text parse" in notes:
+        positives.append("Quantities sourced directly from engineer's CADS/fabricator bar list — exact piece counts, no estimation.")
+        # Already tight; leave pct_low/high as-is
+
+    elif "known plan set" in notes:
+        positives.append("Recognized plan set with pre-verified quantities — high confidence.")
+        pct_low, pct_high = 2, 5
+
+    elif "holistic pass" in notes and "cads" not in notes:
+        factors.append("Quantities estimated from spacing callouts and dimensions — no bar schedule table was found. Holistic calculation method used.")
+        pct_low, pct_high = 15, 30
+
+    elif bar_count < 5:
+        factors.append("Very few bar entries detected — plan may not contain a readable bar schedule. Results are rough estimates only.")
+        pct_low, pct_high = 30, 50
+
+    else:
+        # General Claude image scan with a schedule
+        positives.append("Bar schedule table detected and read from plan images.")
+        pct_low, pct_high = 8, 20
+
+    # ── Page rendering flags ──────────────────────────────────────────────────
+    if "pages:" in notes:
+        import re as _re
+        m = _re.search(r'(\d+) total.*?(\d+) rendered', notes)
+        if m:
+            total_p = int(m.group(1))
+            rendered_p = int(m.group(2))
+            if rendered_p < total_p * 0.5:
+                factors.append(f"Only {rendered_p} of {total_p} pages were scanned — some rebar pages may have been skipped.")
+                pct_high = max(pct_high, 25)
+
+    # ── Unit count multiplier ─────────────────────────────────────────────────
+    if "units:" in notes:
+        import re as _re
+        m = _re.search(r'units:\s*(\d+)', notes)
+        if m and int(m.group(1)) > 1:
+            factors.append(f"Quantities multiplied by unit count ({m.group(1)} units) — if unit count is wrong the total scales proportionally.")
+            pct_high = max(pct_high, pct_high + 5)
+
+    # ── Zero-priced items ─────────────────────────────────────────────────────
+    zero_price_bars = [b.get("size","") for b in (takeoff.get("bars") or [])
+                       if b.get("weight_lbs", 0) > 0 and not b.get("is_fabricated", False)]
+    # (actual zero-price detection happens in pricing loop — check notes for flag)
+    if "$0.00" in (takeoff.get("notes") or ""):
+        factors.append("One or more line items priced at $0.00 — missing QuickBooks price entry for that bar size.")
+        pct_high = max(pct_high, pct_high + 5)
+
+    # ── Fabricated bars present ───────────────────────────────────────────────
+    fab_bars = [b for b in (takeoff.get("bars") or []) if b.get("is_fabricated")]
+    stock_bars = [b for b in (takeoff.get("bars") or []) if not b.get("is_fabricated")]
+    if fab_bars and stock_bars:
+        positives.append("Both fabricated and stock bars itemized separately.")
+    elif fab_bars and not stock_bars:
+        positives.append("All bars identified as fabricated — priced per lb at $0.75.")
+
+    # ── Final label ───────────────────────────────────────────────────────────
+    mid = (pct_low + pct_high) / 2
+    if mid <= 6:
+        label = "High"
+        pct_str = f"±{pct_high}%"
+    elif mid <= 18:
+        label = "Moderate"
+        pct_str = f"±{pct_low}–{pct_high}%"
+    else:
+        label = "Low"
+        pct_str = f"±{pct_low}–{pct_high}%"
+
+    confidence_notes = positives + factors
+    if not confidence_notes:
+        confidence_notes = ["Standard image-based plan scan. Accuracy depends on plan readability and whether a bar schedule is present."]
+
+    return pct_str, label, confidence_notes
+
+
 # ── PDF GENERATION ─────────────────────────────────────────────────────────────
 def generate_bid_pdf(takeoff, prices, output_path, customer_name, project_name, bid_date):
     """Generate branded RCP bid PDF using reportlab."""
@@ -1712,6 +1804,39 @@ def generate_bid_pdf(takeoff, prices, output_path, customer_name, project_name, 
     story.append(gt_box)
     story.append(Spacer(1,16))
 
+    # ── ESTIMATE ACCURACY SECTION ───────────────────────────────────────
+    acc_pct, acc_label, acc_bullets = compute_confidence(takeoff)
+    # Color: High=lime, Moderate=orange, Low=red
+    ACC_COLOR = {
+        "High":     colors.HexColor('#4CAF50'),
+        "Moderate": colors.HexColor('#FF9800'),
+        "Low":      colors.HexColor('#F44336'),
+    }.get(acc_label, LIME)
+
+    # Header row: "ESTIMATE ACCURACY" label + badge
+    acc_header = Table(
+        [[Paragraph('ESTIMATE ACCURACY', ps('ah',10,True,CHARCOAL)),
+          Paragraph(f'{acc_label} — {acc_pct}', ps('ab',10,True,WHITE))]],
+        colWidths=[3.5*inch, 3.5*inch]
+    )
+    acc_header.setStyle(TableStyle([
+        ('BACKGROUND', (1,0),(1,0), ACC_COLOR),
+        ('ALIGN',      (1,0),(1,0), 'CENTER'),
+        ('VALIGN',     (0,0),(-1,0),'MIDDLE'),
+        ('TOPPADDING', (1,0),(1,0), 5),
+        ('BOTTOMPADDING',(1,0),(1,0),5),
+        ('LEFTPADDING', (1,0),(1,0),6),
+        ('RIGHTPADDING',(1,0),(1,0),6),
+        ('ROUNDEDCORNERS',(1,0),(1,0),3),
+    ]))
+    story.append(acc_header)
+    story.append(Spacer(1,4))
+
+    for bullet in acc_bullets:
+        story.append(Paragraph(f'•  {bullet}', ps('ab2',8,False,MID_GRAY)))
+    story.append(Spacer(1,12))
+
+    # ── TECHNICAL NOTES ────────────────────────────────────────────
     notes = takeoff.get("notes", "")
     if notes:
         story.append(Paragraph('NOTES', ps('nh',10,True,CHARCOAL)))
