@@ -677,7 +677,7 @@ Return the same JSON format as before. If you find the same bars as the first pa
 
 Return ONLY valid JSON, no markdown fences."""
 
-def claude_takeoff_batch(image_paths, batch_label="", second_pass=False, takeoff_system=None, second_pass_system=None):
+def claude_takeoff_batch(image_paths, batch_label="", second_pass=False, takeoff_system=None, second_pass_system=None, text_context=""):
     """Send one batch of page images to Claude and return takeoff JSON."""
     if not ANTHROPIC_API_KEY:
         return None, "No ANTHROPIC_API_KEY set"
@@ -700,16 +700,25 @@ def claude_takeoff_batch(image_paths, batch_label="", second_pass=False, takeoff
                 "source": {"type": "base64", "media_type": "image/png", "data": b64}
             })
 
+        # Build text context prefix if we have extracted PDF text
+        ctx_prefix = ""
+        if text_context:
+            ctx_prefix = (
+                f"\n\nEXTRACTED FROM PDF TEXT LAYER — USE THESE VALUES DIRECTLY:\n"
+                f"{text_context}\n"
+                f"Do NOT estimate dimensions visually — sum the dimension strings above instead.\n\n"
+            )
+
         if second_pass:
             content.append({
                 "type": "text",
-                "text": f"SECOND PASS — pages {batch_label}. The first pass found very few items. Look more carefully at every detail, note, and schedule. Remember to apply unit repetition multipliers per your instructions. Extract ALL rebar shown. Return JSON takeoff."
+                "text": ctx_prefix + f"SECOND PASS — pages {batch_label}. The first pass found very few items. Look more carefully at every detail, note, and schedule. Remember to apply unit repetition multipliers per your instructions. Extract ALL rebar shown. Return JSON takeoff."
             })
             system = second_pass_system or SECOND_PASS_SYSTEM_BASE.format(unit_count_rule="")
         else:
             content.append({
                 "type": "text",
-                "text": f"These are plan pages {batch_label}. Large-format sheets (36\"x24\") have been split into LEFT and RIGHT halves to maximize your reading resolution — treat paired _L/_R images as one sheet. Analyze ALL rebar shown and return the JSON takeoff. Apply unit repetition multipliers per your instructions. If no structural/rebar content is visible on these pages, return an empty bars array with dobies_qty=0 and all accessory counts=0."
+                "text": ctx_prefix + f"These are plan pages {batch_label}. Large-format sheets (36\"x24\") have been split into LEFT and RIGHT halves to maximize your reading resolution — treat paired _L/_R images as one sheet. Analyze ALL rebar shown and return the JSON takeoff. Apply unit repetition multipliers per your instructions. If no structural/rebar content is visible on these pages, return an empty bars array with dobies_qty=0 and all accessory counts=0."
             })
             system = takeoff_system or build_takeoff_system(1)
 
@@ -928,6 +937,96 @@ CRITICAL RULES:
 - Description must show the arithmetic: "N piers × M bars × L ft = qty bars"
 {unit_count_rule}"""
 
+def extract_pdf_text_context(pdf_path):
+    """
+    Extract all dimension strings and key numeric callouts from the PDF text layer.
+    Returns a formatted string to inject into Claude's prompt so it doesn't have
+    to guess dimensions by visually scaling the image.
+
+    Extracts:
+      - Dimension strings (e.g. "18'-5"", "27'-4"")
+      - Pier/grade beam schedule values (QUANTITY, DEPTH, DIAMETER, CAGE STEEL)
+      - Slab reinforcing callouts (#N @ X" GRID, #N @ X" O.C.)
+      - Scale notation (e.g. 1/8" = 1'-0")
+    """
+    text = ""
+    try:
+        r = subprocess.run(["pdftotext", "-layout", pdf_path, "-"],
+                           capture_output=True, text=True, timeout=30)
+        if r.returncode == 0 and r.stdout.strip():
+            text = r.stdout
+    except Exception:
+        pass
+    if not text.strip():
+        try:
+            import pdfplumber
+            with pdfplumber.open(pdf_path) as pdf:
+                text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+        except Exception:
+            pass
+    if not text.strip():
+        return ""   # image-only PDF — no text to extract
+
+    lines = []
+
+    # 1. Scale
+    scale_m = re.search(r'SCALE\s*[:\s]+([\d/\'"=\s\-]+)', text)
+    if scale_m:
+        lines.append(f"SCALE: {scale_m.group(1).strip()}")
+
+    # 2. All dimension strings (e.g. 18'-5", 27'-4", 6'-0")
+    dims = re.findall(r"\d+'\s*-?\s*\d+(?:\s*[\"']|\s*IN)?", text)
+    if dims:
+        # Deduplicate but preserve order
+        seen = set()
+        unique_dims = [d.strip() for d in dims if not (d.strip() in seen or seen.add(d.strip()))]
+        lines.append("DIMENSION STRINGS FOUND IN PLAN TEXT: " + ", ".join(unique_dims))
+        # Sum horizontal and vertical dims separately is hard without layout;
+        # just provide the raw list so Claude can sum them correctly
+        try:
+            # Also compute the total of all dims as a sanity check
+            total_ft = 0.0
+            for d in unique_dims:
+                m = re.match(r"(\d+)'\s*-?\s*(\d+)", d)
+                if m:
+                    total_ft += int(m.group(1)) + int(m.group(2)) / 12
+            lines.append(f"(Sum of all dimension strings if laid end-to-end: {total_ft:.1f} ft — use individual strings to build perimeter)")
+        except Exception:
+            pass
+
+    # 3. Drilled piers schedule
+    qty_m = re.search(r'QUANTITY[^\d]*(\d+)', text)
+    if qty_m:
+        lines.append(f"DRILLED PIERS QUANTITY: {qty_m.group(1)}")
+    depth_m = re.search(r'DEPTH[^\d]*(\d+)[\'-]', text)
+    if depth_m:
+        lines.append(f"PIER DEPTH: {depth_m.group(1)}'")
+    dia_m = re.search(r"DIAMETER[^\d]*(\d+)['\"-]", text)
+    if dia_m:
+        lines.append(f"PIER DIAMETER: {dia_m.group(1)}")
+    cage_m = re.search(r'CAGE\s+STEEL[^\n]*', text)
+    if cage_m:
+        lines.append(f"CAGE STEEL: {cage_m.group(0).strip()}")
+    stirrup_m = re.findall(r'STIRRUPS?[^\n]{0,40}', text)
+    for s in stirrup_m:
+        lines.append(f"STIRRUP CALLOUT: {s.strip()}")
+
+    # 4. Slab reinforcing callouts
+    grid_m = re.findall(r'#\d+\'?s?\s*@\s*\d+[\"\']\s*(?:GRID|O\.?C\.?|EW|E\.W\.)?[^\n]{0,20}', text)
+    for g in grid_m:
+        lines.append(f"SLAB/BEAM REBAR CALLOUT: {g.strip()}")
+
+    # 5. Grade beam schedule
+    gb_w = re.search(r'(?:GRADE\s*BEAM|WIDTH)[^\d]*(\d+)[\'-"]', text)
+    gb_h = re.search(r'HEIGHT[^\d]*(\d+)[\'-"]', text)
+    if gb_w: lines.append(f"GRADE BEAM WIDTH: {gb_w.group(1)}")
+    if gb_h: lines.append(f"GRADE BEAM HEIGHT: {gb_h.group(1)}")
+
+    if not lines:
+        return ""
+    return "\n".join(lines)
+
+
 def claude_holistic_pass(pdf_path, tmpdir, structural_pages, unit_count, takeoff_system):
     """
     Send all structural pages at once to Claude with a calculation-oriented prompt.
@@ -947,6 +1046,11 @@ def claude_holistic_pass(pdf_path, tmpdir, structural_pages, unit_count, takeoff
         imgs = render_pages(pdf_path, tmpdir, structural_pages, dpi=render_dpi)
         if not imgs:
             return None
+
+        # Pre-extract dimension strings and schedule values from the PDF text layer.
+        # Injecting these into the prompt means Claude never has to guess dimensions
+        # by visually scaling the image — the biggest source of stock bar error.
+        pdf_text_context = extract_pdf_text_context(pdf_path)
 
         # Build message — cap at 20MB base64 total to stay under API limits
         content = []
@@ -980,12 +1084,26 @@ def claude_holistic_pass(pdf_path, tmpdir, structural_pages, unit_count, takeoff
             unit_rule = NO_REPEAT_RULE
 
         system = HOLISTIC_SYSTEM.format(unit_count_rule=unit_rule)
-        content.append({"type": "text", "text": (
-            f"These are the structural pages from this plan set ({len(imgs)} pages shown). "
-            f"There are {unit_count} repeating unit(s). "
-            f"Calculate actual rebar quantities from spacings and dimensions visible on the plans. "
-            f"Return full JSON takeoff."
-        )})
+
+        # Build the user text block — inject pre-extracted PDF text context first
+        # so Claude uses exact dimension strings instead of guessing from image scale.
+        instruction_parts = [
+            f"These are the structural pages from this plan set ({len(imgs)} pages shown).",
+            f"There are {unit_count} repeating unit(s).",
+        ]
+        if pdf_text_context:
+            instruction_parts.append(
+                f"\n\nEXTRACTED FROM PDF TEXT LAYER — USE THESE VALUES DIRECTLY, DO NOT ESTIMATE VISUALLY:\n"
+                f"{pdf_text_context}\n"
+                f"IMPORTANT: The dimension strings above are the actual plan dimensions."
+                f" Sum them to get total width, height, and grade beam perimeter."
+                f" Do NOT guess or scale from the image — use these numbers."
+            )
+        instruction_parts.append(
+            "Calculate all rebar quantities using the extracted values above and the images for layout context."
+            " Return full JSON takeoff."
+        )
+        content.append({"type": "text", "text": " ".join(instruction_parts)})
 
         msg = client.messages.create(
             model="claude-opus-4-5",
@@ -1166,6 +1284,10 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
     total = get_page_count(pdf_path)
     if not total:
         return None, "Could not determine page count"
+
+    # Extract dimension strings + schedule values from PDF text layer once.
+    # Passed to every Claude call so it never has to guess dimensions visually.
+    pdf_text_context = extract_pdf_text_context(pdf_path)
 
     # ── KNOWN PLAN SET: Ascension Cottages (142 pages) ────────────────────────
     # Quantities verified against the original manual takeoff: $36,105.72 grand total.
@@ -1407,7 +1529,8 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
         result, err = claude_takeoff_batch(
             batch_imgs, label, second_pass=False,
             takeoff_system=takeoff_system,
-            second_pass_system=second_pass_system
+            second_pass_system=second_pass_system,
+            text_context=pdf_text_context
         )
 
         # DELETE PNGs immediately after Claude processes them
@@ -1436,7 +1559,8 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
             result2, _ = claude_takeoff_batch(
                 batch_imgs, label, second_pass=True,
                 takeoff_system=takeoff_system,
-                second_pass_system=second_pass_system
+                second_pass_system=second_pass_system,
+                text_context=pdf_text_context
             )
             for p in batch_imgs:
                 try:
