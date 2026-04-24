@@ -566,6 +566,16 @@ this is a CADS-USA or fabricator bar list. Read it as follows:
 - Apply 7% waste only to exact 20'/40' stock bars
 - Output one bars[] entry per row — if the list has 15 rows, output 15 entries
 
+DRILLED PIER + GRADE BEAM PLANS (very common in Texas residential — READ CAREFULLY):
+If the plan shows a DESIGN DATA table or DRILLED PIERS schedule:
+  - PIER VERTICAL BARS: qty = pier_count × bars_per_cage (e.g. 60 piers × 3 bars = 180 bars)
+    length_ft = pier_depth_ft + 2.0 (embedment). is_fabricated=true. Show arithmetic in description.
+    WRONG: outputting qty=3 "per pier" — you MUST multiply by pier count!
+  - PIER STIRRUPS: total = pier_count × ceil(pier_depth_ft / stirrup_spacing_ft). is_fabricated=true.
+  - GRADE BEAM STIRRUPS: total = ceil(total_beam_LF / stirrup_spacing_ft). is_fabricated=true.
+  - HAIRPINS at intersections: count from plan or estimate ceil(beam_LF×12/spacing_in). is_fabricated=true.
+  - Show arithmetic in every description field: "60 piers × 3 bars × 16.83ft = 180 bars"
+
 Be thorough — read every note, detail, section cut, schedule, and plan view on each page.
 If a page shows a footing schedule, extract every footing size and its rebar.
 Do not skip partial or small details.
@@ -801,49 +811,86 @@ ASCENSION_REBAR_PAGES = [
 # spacings × building dimensions × unit count. This is how the original
 # Ascension Cottages takeoff was produced in a conversational session.
 
-HOLISTIC_SYSTEM = """You are an expert rebar estimator performing a quantity takeoff from structural plans.
-Your job: read ALL the images provided, identify EVERY rebar callout and design data table, and
-CALCULATE actual quantities. These plans may use spacing callouts, design data tables, pier/grade
-beam schedules, or section details instead of a traditional bar schedule table.
+HOLISTIC_SYSTEM = """You are an expert rebar estimator performing a precise quantity takeoff from structural plans.
+Your job: read ALL images, identify EVERY rebar callout and design data table, and CALCULATE actual
+quantities with full arithmetic shown in descriptions. These plans use spacing callouts, design data
+tables, pier/grade beam schedules, and section details — NOT traditional bar schedule tables.
 
-PLAN TYPES YOU MUST HANDLE:
+━━━ STEP 0: BEFORE CALCULATING — READ AND RECORD ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Before writing any JSON, read and record every number from the plans:
+  • PIER QUANTITY: Read the exact integer from the design data table (e.g. "QUANTITY: 60").
+    Count piers on the plan view if no table is present. DO NOT guess — count every circle/symbol.
+  • PIER DEPTH: Read exact depth in feet (e.g. "12'-0" MIN. DEPTH").
+  • PIER CAGE STEEL: Record size and count per cage (e.g. "(3) #5's").
+  • PIER STIRRUPS: Record size, spacing, and cut-length formula.
+  • GRADE BEAM perimeter LF: Sum ALL beam runs from the plan view dimension strings.
+  • GRADE BEAM cage: Record longitudinal bar count and size (e.g. "(2) #5 CONT.").
+  • GRADE BEAM STIRRUPS: Record size, spacing.
+  • HAIRPINS/TRANSVERSE BARS: Any bar callout at close spacing (e.g. "#5 @ 18\" O.C.") that is NOT
+    a slab mat bar — these are often hairpins or cross-ties at grade beam intersections or re-entrant
+    corners. COUNT every one.
+  • SLAB MAT: Record size and spacing in both directions, measure slab area from plan.
+
+━━━ PLAN TYPES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 1. BAR SCHEDULE TABLES: rows of MARK | SIZE | LENGTH | QTY — read every row directly.
 
 2. SPACING CALLOUTS (slab on grade): e.g. "#4 @ 12\" O.C. E.W."
-   Calculate: bars_EW = floor(slab_width_inches / spacing_inches) + 1
-              bars_NS = floor(slab_length_inches / spacing_inches) + 1
-   Use dimensions from the plan view or dimension strings shown.
+   bars_EW = floor(slab_width_in / spacing_in) + 1,  length_EW = slab_length_ft
+   bars_NS = floor(slab_length_in / spacing_in) + 1,  length_NS = slab_width_ft
 
-3. DRILLED PIER + GRADE BEAM FOUNDATIONS (very common in Texas residential):
-   Look for a DESIGN DATA table or DRILLED PIERS schedule showing:
-   - Pier quantity (e.g. "QUANTITY: 60"), diameter, depth, cage steel (e.g. "(3) #5's"), stirrups
-   - Grade beam: width, height, cage steel (e.g. "(2) #5's @ 18\" VERT."), stirrups
-   - Slab reinforcing (e.g. "#3's @ 12\" GRID")
-   CALCULATE pier cage bars:
-     - Vertical bars: qty_piers × bars_per_cage × pier_depth_ft × 1.07 (waste)
-     - Stirrups: qty_piers × ceil(pier_depth_ft / stirrup_spacing_ft) × stirrup_cut_length_ft
-   CALCULATE grade beam bars from perimeter:
-     - Estimate total grade beam LF from foundation plan dimensions (sum all beam runs)
-     - Longitudinal bars: total_LF × bars_per_cage × 1.07
-     - Stirrups: ceil(total_LF / stirrup_spacing_ft) × stirrup_cut_length_ft
-   CALCULATE slab mat from slab area:
-     - Read slab area from foundation plan dimensions
-     - bars_EW = floor(slab_width_ft × 12 / spacing_in) + 1, length = slab_length_ft
-     - bars_NS = floor(slab_length_ft × 12 / spacing_in) + 1, length = slab_width_ft
+3. DRILLED PIER + GRADE BEAM FOUNDATIONS:
 
-4. SECTION DETAILS: pier section, grade beam section, curb details — read cage steel from
-   the cross-section callouts (e.g. "(2) #5 ROW, MAX. VERT. SPC 18\"", "#3 STIRRUPS @ 24\" O.C.")
+   A) PIER VERTICAL BARS — largest item, must be calculated precisely:
+      qty = pier_count × bars_per_cage
+      length_ft = pier_depth_ft + 2.0  (add 2' for embedment into grade beam)
+      weight = qty × length_ft × weight_per_lf
+      is_fabricated = true (length will not be exactly 20' or 40')
+      EXAMPLE: 60 piers × 3 bars × 14 ft depth + 2 ft embed = 180 bars at 16 ft each
+      WRONG: "3 #5 vertical bars" with qty=3 — that is PER PIER, multiply by pier count!
 
-STEPS:
-1. Find and read ALL rebar callouts: design data tables, section details, plan view notes
-2. Read foundation plan dimensions to calculate beam perimeter LF and slab area
-3. Calculate all quantities as shown above
-4. Apply 7% waste to straight stock bars only
-5. Return the full takeoff as JSON
+   B) PIER STIRRUPS/TIES:
+      stirrups_per_pier = ceil(pier_depth_ft / stirrup_spacing_ft)
+      total_stirrups = pier_count × stirrups_per_pier
+      cut_length_ft = (2 × pier_diameter_in + 2 × pier_diameter_in + 8) / 12  [closed hoop]
+        OR use the cut length shown in the design data table if given
+      is_fabricated = true
+
+   C) GRADE BEAM LONGITUDINAL BARS:
+      total_LF = sum of all grade beam runs (read from plan dimension strings)
+      qty = ceil(total_LF / 20) × bars_per_beam_cage
+      length_ft = 20.0 (stock)  OR  use actual length if shorter, mark as fab
+      Apply 7% waste: qty_final = ceil(qty × 1.07)
+
+   D) GRADE BEAM STIRRUPS:
+      total_stirrups = ceil(total_beam_LF / stirrup_spacing_ft)
+      cut_length_ft = (2 × beam_width_in + 2 × beam_height_in + 8) / 12
+      is_fabricated = true
+
+   E) HAIRPIN / TRANSVERSE BARS AT GRADE BEAM INTERSECTIONS:
+      These appear as "#N @ X\" O.C." callouts INSIDE the grade beam, or at re-entrant corners.
+      Count from the plan view: every intersection or corner typically gets 2–4 hairpins.
+      If a spacing is given along the beam: qty = ceil(beam_LF × 12 / spacing_in)
+      cut_length = 2 × beam_width_in / 12 + 2 × 1.5  (hairpin width + hooks)
+      is_fabricated = true
+
+   F) SLAB MAT (inside the grade beam perimeter):
+      Same as spacing callout calculation using interior slab dimensions.
+      Use #3 or #4 at the specified spacing. Apply 7% waste if stock length.
+
+4. SECTION DETAILS: Read cage steel from cross-section callouts carefully.
+   "(2) #5 ROW, MAX. VERT. SPC 18\"" = 2 longitudinal #5 bars, stirrups @ 18\" O.C.
+   Never skip a bar type shown in a section cut.
+
+━━━ CALCULATION DISCIPLINE ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Show your arithmetic in the description field: e.g. "60 piers × 3 bars × 16.83ft = 180 bars"
+- If a number on the plan is ambiguous, use the HIGHER value
+- Count pier symbols on the plan view as a cross-check on the schedule quantity
+- For each stirrup type, produce a SEPARATE bar entry — pier stirrups ≠ grade beam stirrups
+- Each distinct bar size × shape × location = separate JSON entry
 
 Rebar weights per LF: #3=0.376, #4=0.668, #5=1.043, #6=1.502, #7=2.044, #8=2.670, #9=3.400, #10=4.303
-- Valid bar sizes: #3 through #10 — report exactly what is on the plans, do not substitute sizes
+Valid bar sizes: #3 through #10 — report exactly what is on the plans, do not substitute sizes.
 
 Return a JSON object with this exact structure:
 {{
@@ -852,13 +899,13 @@ Return a JSON object with this exact structure:
   "bars": [
     {{
       "mark": "A",
-      "size": "#4",
-      "length_ft": 20,
-      "qty": 50,
+      "size": "#5",
+      "length_ft": 16.83,
+      "qty": 180,
       "type": "straight",
-      "description": "Slab mat 12\" O.C. E.W. — calculated from 30'x40' area",
-      "is_fabricated": false,
-      "weight_lbs": 668.0
+      "description": "Pier verticals: 60 piers × 3 bars × (14ft depth + 2ft embed) = 180 bars at 16.83ft",
+      "is_fabricated": true,
+      "weight_lbs": 3158.7
     }}
   ],
   "dobies_qty": 500,
@@ -866,19 +913,19 @@ Return a JSON object with this exact structure:
   "poly_tape_rolls": 1,
   "tie_wire_rolls": 2,
   "stake_packs": 3,
-  "notes": "Holistic pass: quantities calculated from spacings x dimensions"
+  "notes": "Holistic pass: quantities calculated from design data table and plan dimensions"
 }}
 
-POST-TENSIONED SLABS: PT strands/tendons are NOT rebar — ignore them entirely. Quote ONLY mild steel: hairpins, pier cages, edge bars, corner bars, beam bottom bars. Note PT tendons excluded.
+POST-TENSIONED SLABS: PT strands/tendons are NOT rebar — ignore entirely.
+Quote ONLY mild steel: pier cages, grade beam bars, hairpins, edge bars, slab mat.
 
-CRITICAL:
-- is_fabricated=true for stirrups, hooks, U-bars, rings, ties
-- is_fabricated=true for ANY bar not exactly 20'0" or 40'0" — even if straight (charged at $0.75/lb)
-- is_fabricated=false ONLY for exact 20'/40' straight stock bars
-- Apply 7% waste to exact 20'/40' stock bars only (multiply qty × 1.07, round up)
-- Stirrup cut length: 2×(W+H)+8 inches | Ring: π×D+4 inches
-- Return ONLY valid JSON, no markdown fences
-- Show your dimension source in the description (e.g. "from 34'x34' footprint scaled off grid")
+CRITICAL RULES:
+- is_fabricated=true for: stirrups, hooks, U-bars, rings, ties, and ANY bar not exactly 20'0" or 40'0"
+- is_fabricated=false ONLY for exact 20'0" or 40'0" straight stock bars
+- Apply 7% waste to stock bars only (qty × 1.07, round up)
+- Stirrup perimeter: 2×W + 2×H + 8 inches (closed). Ring: π×D + 4 inches.
+- Return ONLY valid JSON — no markdown fences, no commentary outside the JSON
+- Description must show the arithmetic: "N piers × M bars × L ft = qty bars"
 {unit_count_rule}"""
 
 def claude_holistic_pass(pdf_path, tmpdir, structural_pages, unit_count, takeoff_system):
