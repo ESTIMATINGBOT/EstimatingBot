@@ -29,27 +29,21 @@ _logo_candidates = [
 ]
 LOGO = next((os.path.abspath(p) for p in _logo_candidates if os.path.exists(os.path.abspath(p))), "")
 
-FALLBACK_PRICES = {
-    "#3 20'":  4.28195,
-    "#4 20'":  7.367,
-    "#5 20'":  11.6146,
-    "#6 20'":  16.397,
-    "FAB":     0.75,       # NEVER CHANGE
-    "DOBIE":   0.55,
-    "POLY":    95.50,
-    "TAPE":    27.25,
-    "WIRE":    4.99,
-    "STAKES":  24.90,
-}
+# FAB rate is a business rule, not a QBO item — kept here as a constant only
+FAB_RATE = 0.75   # NEVER CHANGE — fabricator charges $0.58/lb, customer billed $0.75/lb
 
 # ── QBO PRICING ───────────────────────────────────────────────────────────────
+# No fallback prices. ALL rebar/accessory prices come from live QuickBooks.
+# If QBO is unreachable or an item has no QBO entry, it will price at $0.00
+# and appear visibly on the bid — never silently wrong.
 def fetch_qbo_prices():
+    # Start with only the one non-QBO constant
+    prices = {"FAB": FAB_RATE}
     try:
         req = urllib.request.urlopen(QBO_ITEMS_URL, timeout=8)
         payload = json.loads(req.read().decode())
         # Response shape: {"count":N, "items":[...]} or a bare list
         items = payload.get("items", payload) if isinstance(payload, dict) else payload
-        prices = dict(FALLBACK_PRICES)
         for item in items:
             # API returns lowercase keys (name/unitPrice) — normalise both casings
             name  = item.get("name") or item.get("Name") or ""
@@ -72,7 +66,7 @@ def fetch_qbo_prices():
             elif "#9" in name and "20'" in name:
                 prices["#9 20'"] = price
             elif "fabrication" in nl or "fabrication-1" in nl:
-                pass  # NEVER update FAB from QBO — always $0.75
+                pass  # FAB is always $0.75 — never pull from QBO
             elif ("dobie" in nl or "concrete chair" in nl) and "wire" not in nl:
                 prices["DOBIE"] = price
             elif "poly 10 mil" in nl:
@@ -83,9 +77,12 @@ def fetch_qbo_prices():
                 prices["WIRE"] = price
             elif "stakes 18" in nl:
                 prices["STAKES"] = price
-        return prices
-    except Exception:
-        return dict(FALLBACK_PRICES)
+    except Exception as e:
+        # QBO unreachable — log clearly, return only FAB constant
+        # All rebar/accessory lines will show $0.00 on the bid, making the gap obvious
+        print(f"[QBO] WARNING: Could not fetch live prices — {e}", flush=True)
+        print("[QBO] Bid will show $0.00 for any item without a QBO price.", flush=True)
+    return prices
 
 # ── PAGE RENDERING ─────────────────────────────────────────────────────────────
 def get_page_count(pdf_path):
