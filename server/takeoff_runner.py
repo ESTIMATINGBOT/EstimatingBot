@@ -1875,37 +1875,6 @@ def generate_bid_pdf(takeoff, prices, output_path, customer_name, project_name, 
     story.append(gt_box)
     story.append(Spacer(1,16))
 
-    # ── ESTIMATE ACCURACY SECTION ───────────────────────────────────────
-    acc_pct, acc_label, acc_bullets = compute_confidence(takeoff)
-    ACC_COLOR = {
-        "High":     colors.HexColor('#2E7D32'),  # dark green — white text readable
-        "Moderate": colors.HexColor('#1565C0'),  # dark blue — no clash, white text clear
-        "Low":      colors.HexColor('#B71C1C'),  # dark red — white text readable
-    }.get(acc_label, colors.HexColor('#1565C0'))
-
-    # Two-cell row: left=label text, right=colored badge
-    acc_tbl = Table(
-        [[Paragraph('<b>ESTIMATE ACCURACY</b>', ps('ah', 10, False, CHARCOAL)),
-          Paragraph(f'<b>{acc_label} — {acc_pct}</b>', ps('ab', 9, False, WHITE, TA_CENTER))]],
-        colWidths=[CONTENT_W - 1.6*inch, 1.6*inch]
-    )
-    acc_tbl.setStyle(TableStyle([
-        ('BACKGROUND',    (1,0),(1,0), ACC_COLOR),
-        ('ALIGN',         (0,0),(0,0), 'LEFT'),
-        ('ALIGN',         (1,0),(1,0), 'CENTER'),
-        ('VALIGN',        (0,0),(-1,0),'MIDDLE'),
-        ('TOPPADDING',    (0,0),(-1,0), 6),
-        ('BOTTOMPADDING', (0,0),(-1,0), 6),
-        ('LEFTPADDING',   (0,0),(0,0),  0),
-        ('LEFTPADDING',   (1,0),(1,0),  4),
-        ('RIGHTPADDING',  (1,0),(1,0),  4),
-    ]))
-    story.append(acc_tbl)
-    story.append(Spacer(1, 4))
-    for bullet in acc_bullets:
-        story.append(Paragraph(f'•  {bullet}', ps('ab2', 8, False, MID_GRAY)))
-    story.append(Spacer(1, 12))
-
     # ── TECHNICAL NOTES ────────────────────────────────────────────
     notes = takeoff.get("notes", "")
     if notes:

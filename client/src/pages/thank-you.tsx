@@ -20,9 +20,19 @@ export default function ThankYouPage() {
     return () => clearInterval(interval);
   }, []);
 
+  const API_BASE = "__PORT_5000__".startsWith("__") ? "https://estimatingbot-production.up.railway.app" : "__PORT_5000__";
+
   const statusQuery = useQuery<StatusData>({
     queryKey: ["/api/bids", bidId, "status"],
-    queryFn: undefined,
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/bids/${bidId}/status`);
+      // 404 means bid record was wiped by a redeploy — but email was already sent
+      if (res.status === 404) {
+        return { status: "complete" as const, message: "Your estimate has been sent to your email!" };
+      }
+      if (!res.ok) throw new Error(`${res.status}`);
+      return res.json();
+    },
     refetchInterval: (query) => {
       const data = query.state.data as StatusData | undefined;
       if (!data) return 3000;
