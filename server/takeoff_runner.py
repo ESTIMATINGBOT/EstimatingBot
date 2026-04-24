@@ -575,9 +575,13 @@ If the plan shows a DESIGN DATA table or DRILLED PIERS schedule:
   - GRADE BEAM STIRRUPS: total = ceil(total_beam_LF / stirrup_spacing_ft). is_fabricated=true.
   - HAIRPINS at intersections: count from plan or estimate ceil(beam_LF×12/spacing_in). is_fabricated=true.
   - SLAB MAT: Any "#N @ X\" GRID" or "#N @ X\" O.C. E.W." callout = MANDATORY slab mat entry.
-    NEVER skip or replace with curb bars. Calculate: sum dimension strings for W and D,
-    bars_EW=ceil(D×12/S)+1, bars_NS=ceil(W×12/S)+1, total_LF=bars_EW×W+bars_NS×D,
-    bars_40ft=ceil(total_LF/40×1.07). is_fabricated=false. Show all arithmetic in description.
+    NEVER skip or replace with curb bars. Sum horizontal dims for W, vertical dims for D.
+    bars_EW=ceil(D×12/S)+1, bars_NS=ceil(W×12/S)+1, total_LF=bars_EW×W+bars_NS×D.
+    OUTPUT AS 20' BARS: bars_20ft=ceil(total_LF/20×1.07), length_ft=20.0, is_fabricated=false.
+    WRONG: length_ft=40. RIGHT: length_ft=20.
+  - GRADE BEAM TOTAL LF: exterior perimeter + interior beams. Exterior only = 50-60% of total.
+    If interior beams not countable, multiply exterior perimeter × 1.8 for total beam LF.
+    Use this same total_LF for both longitudinal bars AND stirrup count.
   - Show arithmetic in every description field: "60 piers × 3 bars × 16.83ft = 180 bars"
 
 Be thorough — read every note, detail, section cut, schedule, and plan view on each page.
@@ -877,22 +881,39 @@ Before writing any JSON, read and record every number from the plans:
       is_fabricated = true
 
    C) GRADE BEAM LONGITUDINAL BARS:
-      total_LF = sum of all grade beam runs (read from plan dimension strings)
+      total_LF = EXTERIOR perimeter + ALL INTERIOR BEAM RUNS
+      CRITICAL: Most residential foundations have interior stem walls / cross-beams.
+      The exterior perimeter alone is typically only 50-60% of total beam LF.
+      Estimate interior beams: count the number of interior beam lines visible on
+      the plan view and multiply by their approximate span length.
+      If interior beams are not clearly countable, multiply exterior perimeter by 1.8
+      as a conservative estimate of total beam LF including interior runs.
       qty = ceil(total_LF / 20) × bars_per_beam_cage
       length_ft = 20.0 (stock)  OR  use actual length if shorter, mark as fab
       Apply 7% waste: qty_final = ceil(qty × 1.07)
 
    D) GRADE BEAM STIRRUPS:
       total_stirrups = ceil(total_beam_LF / stirrup_spacing_ft)
+      Use the SAME total_LF as calculated in (C) above — exterior + interior.
       cut_length_ft = (2 × beam_width_in + 2 × beam_height_in + 8) / 12
       is_fabricated = true
+      NOTE: If exterior perimeter ÷ spacing gives ~135 stirrups but the plan
+      shows dense stirrup callouts throughout, you are likely missing interior beams.
+      Use the 1.8× multiplier to account for interior runs.
 
    E) HAIRPIN / TRANSVERSE BARS AT GRADE BEAM INTERSECTIONS:
-      These appear as "#N @ X\" O.C." callouts INSIDE the grade beam, or at re-entrant corners.
-      Count from the plan view: every intersection or corner typically gets 2–4 hairpins.
-      If a spacing is given along the beam: qty = ceil(beam_LF × 12 / spacing_in)
-      cut_length = 2 × beam_width_in / 12 + 2 × 1.5  (hairpin width + hooks)
+      These are CRITICAL high-quantity items. Look for ANY of these callouts:
+        - "#N @ X\" O.C." inside or beside a grade beam
+        - "TYPE 17" bars on a CADS-style bar list
+        - Short bent bars (2'–5') at regular intervals shown in section detail
+        - Bars described as hairpins, transverse ties, or cross-ties
+      If a spacing is given along the beam:
+        qty = ceil(total_beam_LF × 12 / spacing_in)
+        cut_length = 2 × beam_width_in / 12 + 2 × 1.5  (U-shape width + hooks)
+      If no spacing is given but the detail shows hairpins at intersections:
+        qty = num_intersections × hairpins_per_intersection (typically 4 per intersection)
       is_fabricated = true
+      These bars are frequently the 2nd or 3rd largest item by weight — do NOT skip them.
 
    F) SLAB MAT (inside the grade beam perimeter) — MANDATORY IF ANY GRID CALLOUT EXISTS:
       A "#N @ X\" GRID" or "#N @ X\" O.C. E.W." callout ALWAYS means a full slab mat.
@@ -900,24 +921,35 @@ Before writing any JSON, read and record every number from the plans:
       YOU MUST include a slab mat entry any time you see a GRID callout. Skipping it is wrong.
 
       CALCULATION:
-        Step 1: Determine interior slab dimensions.
-                Use the dimension strings provided in the text context.
-                Sum the strings along each axis to get total width W and total depth D.
-                For an L-shaped or irregular plan, estimate interior area as ~80% of W×D.
-        Step 2: Calculate bar counts at the given spacing S (inches):
-                bars_EW = ceil(D×12 / S) + 1    (bars running East-West, spanning width W)
-                bars_NS = ceil(W×12 / S) + 1    (bars running North-South, spanning depth D)
-        Step 3: Total LF = bars_EW × W + bars_NS × D
-        Step 4: Since slab mat bars are cut to span the slab they will almost never be
-                exactly 20' or 40'. Use 40' stock bars and calculate:
-                bars_40ft = ceil(total_LF / 40)
-                Apply 7% waste: bars_final = ceil(bars_40ft × 1.07)
-                is_fabricated = false (these are straight stock bars)
+        Step 1: Determine slab dimensions W (width) and D (depth).
+                From the extracted dimension strings, identify TWO INDEPENDENT AXES:
+                  - HORIZONTAL strings: running left→right across the plan top or bottom
+                  - VERTICAL strings: running top→bottom along the plan left or right side
+                Sum ALL horizontal strings for W. Sum ALL vertical strings for D.
+                Do NOT use only one side. The plan will show strings on multiple edges.
+                For an L-shaped or irregular plan, use 80% of W×D for effective area.
+                EXAMPLE: top dims 5'-11"+11'-0"+5'-11"+18'-5"+17'-7"+16'-6"+3'-10" = 79.2ft = W
+                         left dims 6'-0"+6'-9"+6'-5"+5'-10"+13'-3"+23'-2"+6'-1"+1'-5" = 69.0ft = D
+
+        Step 2: Calculate bar counts at spacing S (inches):
+                bars_EW = ceil(D×12 / S) + 1    (bars spanning W, one per S inches of D)
+                bars_NS = ceil(W×12 / S) + 1    (bars spanning D, one per S inches of W)
+
+        Step 3: Total LF = (bars_EW × W) + (bars_NS × D)
+
+        Step 4: OUTPUT AS 20' BARS — THIS IS MANDATORY:
+                We sell 20' rebar as the default stock length, NOT 40'.
+                bars_20ft = ceil(total_LF / 20)
+                Apply 7% waste: bars_final = ceil(bars_20ft × 1.07)
+                Set length_ft = 20.0 and is_fabricated = false
+                WRONG: outputting length_ft=40 for slab mat bars
+                RIGHT: length_ft=20, qty=bars_final, is_fabricated=false
+
         Step 5: Show full arithmetic in description:
-                e.g. "Slab mat #3 @ 12\" GRID: W=82ft, D=60ft.
-                      EW: ceil(60×12/12)+1=61 bars × 82ft=5,002LF.
-                      NS: ceil(82×12/12)+1=83 bars × 60ft=4,980LF.
-                      Total=9,982LF ÷ 40ft=250 bars × 1.07=268 × 40' bars"
+                e.g. "Slab mat #3 @ 12\" GRID: W=79ft (top dims summed), D=69ft (left dims summed).
+                      EW: ceil(69×12/12)+1=70 bars × 79ft=5,530LF.
+                      NS: ceil(79×12/12)+1=80 bars × 69ft=5,520LF.
+                      Total=11,050LF ÷ 20ft=553 bars × 1.07=592 × 20' bars"
 
 4. SECTION DETAILS: Read cage steel from cross-section callouts carefully.
    "(2) #5 ROW, MAX. VERT. SPC 18\"" = 2 longitudinal #5 bars, stirrups @ 18\" O.C.
