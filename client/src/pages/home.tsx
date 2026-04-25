@@ -9,13 +9,34 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Upload, FileText, Phone, Mail, User, Building2,
-  CheckCircle2, ArrowRight, Clock, Truck, Award, Link, MessageSquare, Info
+  CheckCircle2, ArrowRight, Clock, Truck, Award, Link, MessageSquare, Info, Zap
 } from "lucide-react";
 import ChatPage from "./chat";
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<"estimate" | "chat">("estimate");
   const [, navigate] = useLocation();
+
+  // Rotating hero headlines
+  const headlines = [
+    { line1: "Upload your plans.", line2: "Get a rebar estimate.", tab: "estimate" as const },
+    { line1: "Have a concrete question?", line2: "Ask our AI.", tab: "chat" as const },
+    { line1: "Need a quote or invoice?", line2: "Done in minutes.", tab: "chat" as const },
+    { line1: "Want to place an order?", line2: "We handle it all.", tab: "chat" as const },
+  ];
+  const [headlineIdx, setHeadlineIdx] = useState(0);
+  const [fadeIn, setFadeIn] = useState(true);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setFadeIn(false);
+      setTimeout(() => {
+        setHeadlineIdx(i => (i + 1) % headlines.length);
+        setFadeIn(true);
+      }, 400);
+    }, 3500);
+    return () => clearInterval(timer);
+  }, []);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -154,17 +175,74 @@ export default function HomePage() {
       </header>
 
       {/* Hero */}
-      <section className="bg-black text-white py-12 px-4">
+      <section className="bg-black text-white pt-12 pb-10 px-4">
         <div className="max-w-3xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 bg-[#C8D400] text-black text-xs font-bold px-3 py-1 rounded-full mb-6 uppercase tracking-wider">
-            <FileText className="w-3.5 h-3.5" />
-            Free Preliminary Estimate
+          {/* Animated badge */}
+          <div className="inline-flex items-center gap-2 bg-[#C8D400]/10 border border-[#C8D400]/30 text-[#C8D400] text-xs font-bold px-3 py-1 rounded-full mb-6 uppercase tracking-wider">
+            <Zap className="w-3.5 h-3.5" />
+            AI-Powered Rebar Tools
           </div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold mb-4 leading-tight" style={{ fontFamily: "'Cabinet Grotesk', sans-serif" }}>
-            Upload Your Plans.<br />Get a Rebar Estimate.
-          </h1>
-          <p className="text-gray-300 text-base max-w-xl mx-auto leading-relaxed">
-            Upload your structural or concrete plans as a PDF and we'll generate a branded preliminary rebar estimate and send it directly to your email — typically within minutes.
+
+          {/* Rotating headline */}
+          <div className="h-24 sm:h-20 flex flex-col items-center justify-center mb-6">
+            <h1
+              className="text-3xl sm:text-4xl font-extrabold leading-tight transition-all duration-400"
+              style={{
+                fontFamily: "'Cabinet Grotesk', sans-serif",
+                opacity: fadeIn ? 1 : 0,
+                transform: fadeIn ? "translateY(0)" : "translateY(-8px)",
+                transition: "opacity 0.4s ease, transform 0.4s ease",
+              }}
+            >
+              <span className="text-white">{headlines[headlineIdx].line1}</span><br />
+              <span className="text-[#C8D400]">{headlines[headlineIdx].line2}</span>
+            </h1>
+          </div>
+
+          {/* Dot indicators */}
+          <div className="flex justify-center gap-1.5 mb-8">
+            {headlines.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => { setHeadlineIdx(i); setFadeIn(true); }}
+                className={`w-1.5 h-1.5 rounded-full transition-all ${
+                  i === headlineIdx ? "bg-[#C8D400] w-4" : "bg-white/20 hover:bg-white/40"
+                }`}
+              />
+            ))}
+          </div>
+
+          {/* Tab toggle — hero placement */}
+          <div className="flex rounded-xl border border-white/10 bg-white/5 p-1 max-w-sm mx-auto">
+            <button
+              onClick={() => setActiveTab("estimate")}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
+                activeTab === "estimate"
+                  ? "bg-[#C8D400] text-black shadow"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              Estimate
+            </button>
+            <button
+              onClick={() => setActiveTab("chat")}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
+                activeTab === "chat"
+                  ? "bg-[#C8D400] text-black shadow"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              Order Chat
+            </button>
+          </div>
+
+          {/* Sub-caption that changes with tab */}
+          <p className="text-gray-500 text-xs mt-3">
+            {activeTab === "estimate"
+              ? "Upload structural PDF → AI takeoff → estimate emailed in minutes"
+              : "Ask questions, get quotes, place orders & receive a QuickBooks invoice"}
           </p>
         </div>
       </section>
@@ -231,32 +309,6 @@ export default function HomePage() {
       {/* Main content */}
       <main className="flex-1 py-10 px-4">
         <div className="max-w-2xl mx-auto">
-
-          {/* Tab Toggle */}
-          <div className="flex rounded-xl border border-white/10 bg-white/5 p-1 mb-6">
-            <button
-              onClick={() => setActiveTab("estimate")}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
-                activeTab === "estimate"
-                  ? "bg-[#C8D400] text-black shadow"
-                  : "text-gray-400 hover:text-white"
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              Estimate
-            </button>
-            <button
-              onClick={() => setActiveTab("chat")}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
-                activeTab === "chat"
-                  ? "bg-[#C8D400] text-black shadow"
-                  : "text-gray-400 hover:text-white"
-              }`}
-            >
-              <MessageSquare className="w-4 h-4" />
-              Order Chat
-            </button>
-          </div>
 
           {/* Chat tab */}
           {activeTab === "chat" && (
