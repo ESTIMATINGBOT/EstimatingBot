@@ -114,6 +114,8 @@ export default function ChatPage() {
     setInput("");
     setLoading(true);
 
+    let handledByInvoice = false;
+
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -135,6 +137,7 @@ export default function ChatPage() {
             const cleanReply = replyText.replace(/```order\n[\s\S]+?\n```/, "").trim();
             addMessage({ role: "assistant", content: cleanReply });
             setLoading(false);
+            handledByInvoice = true;
             // Auto-create invoice immediately — no extra confirm button needed
             await createInvoice(order);
             return;
@@ -146,8 +149,10 @@ export default function ChatPage() {
     } catch {
       addMessage({ role: "assistant", content: "Connection error. Please try again or call us at 469-631-7730." });
     } finally {
-      setLoading(false);
-      setTimeout(() => textareaRef.current?.focus(), 50);
+      if (!handledByInvoice) {
+        setLoading(false);
+        setTimeout(() => textareaRef.current?.focus(), 50);
+      }
     }
   };
 
