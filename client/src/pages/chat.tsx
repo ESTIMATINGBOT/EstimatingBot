@@ -69,6 +69,18 @@ export default function ChatPage() {
   const createInvoice = async (order: OrderData) => {
     setInvoicing(true);
     try {
+      // Extract cached delivery distance/fee from the SYSTEM note in history (if present)
+      // This acts as a fallback if the server-side Maps lookup fails
+      let cachedMiles: number | undefined;
+      let cachedFee: number | undefined;
+      const sysNote = messages.find(m => m.content.startsWith("SYSTEM: Google Maps distance"));
+      if (sysNote) {
+        const milesMatch = sysNote.content.match(/([\d.]+) miles/);
+        const feeMatch = sysNote.content.match(/fee: \$([\d.]+)/);
+        if (milesMatch) cachedMiles = parseFloat(milesMatch[1]);
+        if (feeMatch) cachedFee = parseFloat(feeMatch[1]);
+      }
+
       const res = await fetch("/api/web-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -79,6 +91,8 @@ export default function ChatPage() {
           customerCompany: order.customerCompany || "",
           deliveryAddress: order.deliveryAddress || "",
           deliveryNotes: order.deliveryNotes || "",
+          deliveryMilesFallback: cachedMiles,
+          deliveryFeeFallback: cachedFee,
           items: order.items,
         }),
       });
