@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2, Clock, AlertCircle, Mail, Phone, ArrowLeft } from "lucide-react";
+import { CheckCircle2, Clock, AlertCircle, Mail, Phone, ArrowLeft, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type StatusData = {
@@ -152,6 +152,14 @@ export default function ThankYouPage() {
               <p className="text-xs text-green-600">
                 Ready to place an order or have questions? Call or email us below — we're here Mon–Fri, 6 AM–3 PM CST.
               </p>
+              {/* Backup download link — available for 5 min after completion */}
+              <a
+                href={`${API_BASE}/api/bids/${bidId}/download`}
+                className="inline-flex items-center gap-2 text-xs font-medium text-green-700 underline underline-offset-2 hover:text-green-900 transition-colors"
+              >
+                <Download className="w-3 h-3" />
+                Didn't receive it? Download your estimate directly
+              </a>
             </div>
           )}
 

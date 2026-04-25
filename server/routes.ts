@@ -340,7 +340,7 @@ export async function registerRoutes(httpServer: Server, app: Express) {
           `Estimate sent to your email!${grandTotalStr ? ` Grand total: ${grandTotalStr}` : ""}`, result.pdfPath);
       } catch (emailErr: any) {
         storage.updateBidStatus(bid.id, "complete",
-          `Estimate generated but email delivery failed. Please contact us directly.${grandTotalStr ? ` Grand total: ${grandTotalStr}` : ""}`,
+          `Your estimate is ready!${grandTotalStr ? ` Grand total: ${grandTotalStr}` : ""} Email delivery failed — please use the download link below or call us at 469-631-7730.`,
           result.pdfPath);
       }
 
