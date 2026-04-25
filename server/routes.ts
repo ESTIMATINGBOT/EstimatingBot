@@ -556,9 +556,11 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   // ── AI ORDER CHAT ────────────────────────────────────────────────────────────
   // Stateless chat endpoint — each call sends full history + system prompt to Claude
   // Session history is managed client-side to keep the server stateless
-  app.post("/api/chat", express.json({ limit: "64kb" }), async (req, res) => {
-    const { messages } = req.body as {
+  app.post("/api/chat", express.json({ limit: "10mb" }), async (req, res) => {
+    const { messages, imageBase64, imageMediaType } = req.body as {
       messages: { role: "user" | "assistant"; content: string }[];
+      imageBase64?: string | null;
+      imageMediaType?: string | null;
     };
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: "messages array required" });
@@ -819,7 +821,9 @@ REBAR: Grade 60 (ASTM A615) is standard. Cover: footings 3", slabs 3/4"–1.5", 
 
 CONCRETE MIX: 2500 psi=light residential; 3000 psi=standard residential/commercial; 4000 psi=commercial/high-traffic; 5000+ psi=structural columns. Cure minimum 7 days moist. Short load fee (<10 yd³) may apply.
 
-Always recommend consulting a structural engineer for project-specific structural decisions.`;
+Always recommend consulting a structural engineer for project-specific structural decisions.
+
+IMAGE ADVICE: Customers can send photos of their rebar, plans, concrete pours, or job site. When you receive an image, analyze it and give specific, practical advice. Identify bar sizes if visible, spacing, layout issues, cover concerns, or any problems you spot. If it looks like a plan sheet, identify bar marks, sizes, and spacing. Always tie advice back to what products RCP can supply.`;
 
 
     try {
@@ -834,7 +838,22 @@ Always recommend consulting a structural engineer for project-specific structura
           model: "claude-haiku-4-5",
           max_tokens: 500,
           system: systemPrompt,
-          messages,
+          messages: (() => {
+            // If image attached, replace last user message content with a vision block
+            if (!imageBase64 || !imageMediaType) return messages;
+            const msgs = [...messages];
+            const lastUserIdx = msgs.map(m => m.role).lastIndexOf("user");
+            if (lastUserIdx === -1) return msgs;
+            const lastMsg = msgs[lastUserIdx];
+            msgs[lastUserIdx] = {
+              ...lastMsg,
+              content: [
+                { type: "image", source: { type: "base64", media_type: imageMediaType, data: imageBase64 } },
+                { type: "text", text: lastMsg.content || "What can you tell me about this image? Give specific advice for concrete/rebar work if applicable." },
+              ] as any,
+            };
+            return msgs;
+          })(),
         }),
       });
 

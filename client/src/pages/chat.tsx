@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, MessageSquare, CheckCircle2, ExternalLink } from "lucide-react";
+import { Send, MessageSquare, CheckCircle2, ExternalLink, ImagePlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
+  imageUrl?: string; // data URL for display only
 }
 
 interface OrderData {
@@ -51,8 +52,10 @@ export default function ChatPage() {
   const [invoicing, setInvoicing] = useState(false);
   const [invoice, setInvoice] = useState<InvoiceResult | null>(null);
   const [pendingOrder, setPendingOrder] = useState<OrderData | null>(null);
+  const [pendingImage, setPendingImage] = useState<{ base64: string; mediaType: string; dataUrl: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     // Only auto-scroll after the first message — don't hijack page scroll on mount
@@ -124,11 +127,29 @@ export default function ChatPage() {
     } catch { return null; }
   };
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset so same file can be reselected
+    e.target.value = "";
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      // Extract base64 and media type from data URL
+      const [meta, base64] = dataUrl.split(",");
+      const mediaType = meta.match(/:(.*?);/)?.[1] || "image/jpeg";
+      setPendingImage({ base64, mediaType, dataUrl });
+    };
+    reader.readAsDataURL(file);
+  };
+
   const send = async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
-    if (!text || loading) return;
+    if (!text && !pendingImage || loading) return;
 
-    const userMsg: Message = { role: "user", content: text };
+    const userMsg: Message = { role: "user", content: text || "[image]", imageUrl: pendingImage?.dataUrl };
+    const imageToSend = pendingImage;
+    setPendingImage(null);
     let newHistory = [...messages, userMsg];
     setMessages(newHistory);
     setInput("");
@@ -168,6 +189,8 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: newHistory.map(m => ({ role: m.role, content: m.content })),
+          imageBase64: imageToSend?.base64 || null,
+          imageMediaType: imageToSend?.mediaType || null,
         }),
       });
       const data = await res.json();
@@ -225,7 +248,14 @@ export default function ChatPage() {
                 ? "bg-[#C8D400] text-black rounded-tr-sm font-medium"
                 : "bg-white/5 border border-white/10 text-gray-100 rounded-tl-sm"
             }`}>
-              {renderContent(msg.content)}
+              {msg.imageUrl && (
+                <img
+                  src={msg.imageUrl}
+                  alt="uploaded"
+                  className="rounded-lg max-w-full mb-2 max-h-48 object-contain"
+                />
+              )}
+              {msg.content !== "[image]" && renderContent(msg.content)}
             </div>
           </div>
         ))}
@@ -295,7 +325,40 @@ export default function ChatPage() {
 
       {/* Input */}
       <div className="px-4 pb-4 pt-2 border-t border-white/10">
+        {/* Image preview */}
+        {pendingImage && (
+          <div className="relative inline-block mb-2">
+            <img
+              src={pendingImage.dataUrl}
+              alt="preview"
+              className="h-16 w-16 object-cover rounded-lg border border-[#C8D400]/40"
+            />
+            <button
+              onClick={() => setPendingImage(null)}
+              className="absolute -top-1.5 -right-1.5 bg-black border border-white/20 rounded-full p-0.5 hover:border-red-400"
+            >
+              <X className="w-3 h-3 text-white" />
+            </button>
+          </div>
+        )}
         <div className="flex gap-2 items-end">
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageSelect}
+          />
+          {/* Image upload button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={invoicing || loading}
+            title="Attach a photo"
+            className="h-[42px] w-[42px] flex items-center justify-center rounded-xl border border-white/20 bg-white/5 text-gray-400 hover:border-[#C8D400]/50 hover:text-[#C8D400] transition-colors flex-shrink-0 disabled:opacity-40"
+          >
+            <ImagePlus className="w-4 h-4" />
+          </button>
           <Textarea
             ref={textareaRef}
             placeholder="Ask about rebar, place an order..."
@@ -309,7 +372,7 @@ export default function ChatPage() {
           />
           <Button
             onClick={() => send()}
-            disabled={!input.trim() || loading || invoicing}
+            disabled={(!input.trim() && !pendingImage) || loading || invoicing}
             size="sm"
             className="bg-[#C8D400] hover:bg-[#b0bb00] text-black font-semibold h-[42px] px-4 rounded-xl flex-shrink-0"
           >
