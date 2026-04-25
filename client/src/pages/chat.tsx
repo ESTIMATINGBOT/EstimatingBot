@@ -54,7 +54,10 @@ export default function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Only auto-scroll after the first message — don't hijack page scroll on mount
+    if (messages.length > 1 || loading || invoice) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages, loading, invoice]);
 
   const addMessage = (msg: Message) => setMessages(prev => [...prev, msg]);

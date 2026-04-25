@@ -58,6 +58,11 @@ export default function HomePage() {
   const [dragOver, setDragOver] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Scroll to top on initial page load
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, []);
+
   // Reset form and clear any cached bid status queries when landing on home page.
   // This ensures "Submit Another Plan" always starts completely fresh.
   useEffect(() => {
