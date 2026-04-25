@@ -568,6 +568,7 @@ export async function registerRoutes(httpServer: Server, app: Express) {
     if (!anthropicKey) return res.status(500).json({ error: "AI not configured" });
 
     // Fetch live QBO pricing to inject into system prompt
+    const BUNDLE_QTY: Record<string, number> = { "3": 266, "4": 150, "5": 96, "6": 68, "7": 50, "8": 38, "9": 30, "10": 24, "11": 18 };
     let priceList = "";
     try {
       const priceRes = await fetch("https://rcp-sms-bot-production.up.railway.app/api/qbo/items");
@@ -575,9 +576,16 @@ export async function registerRoutes(httpServer: Server, app: Express) {
         const priceData = await priceRes.json() as any[];
         const lines = priceData
           .filter((p: any) => p.unitPrice > 0 && p.active)
-          .map((p: any) => `  - ${p.name}: $${p.unitPrice.toFixed(5)}/unit (QBO ID: ${p.id})`)
+          .map((p: any) => {
+            // For rebar items, also show per-bundle price so AI doesn't guess
+            const sizeMatch = p.name.match(/#(\d+)/);
+            const bundleNote = sizeMatch && BUNDLE_QTY[sizeMatch[1]]
+              ? ` | bundle(${BUNDLE_QTY[sizeMatch[1]]} bars)=$${(p.unitPrice * BUNDLE_QTY[sizeMatch[1]]).toFixed(2)}`
+              : "";
+            return `  - ${p.name}: $${p.unitPrice.toFixed(5)}/bar (QBO ID: ${p.id})${bundleNote}`;
+          })
           .join("\n");
-        priceList = `\n\nLIVE QBO PRICING (use exact prices below, do not guess):\n${lines}`;
+        priceList = `\n\nLIVE QBO PRICING — prices are PER INDIVIDUAL BAR/UNIT. For bundles multiply by bundle qty shown:\n${lines}`;
       }
     } catch {}
 
@@ -604,13 +612,19 @@ Bundle quantities (20' bar): #3=266, #4=150, #5=96, #6=68, #7=50, #8=38, #9=30, 
 Tax rate: 8.25% (McKinney TX)${priceList}
 
 ORDER FLOW — follow this exactly when a customer wants to place an order:
-1. Collect: bar size, quantity, pickup vs delivery (if delivery: get address)
+1. Collect: product, quantity (bars or bundles), pickup vs delivery (if delivery: get address)
 2. Collect: customer full name, email address, phone number, company name (optional)
-3. Look up the exact unit price from the LIVE QBO PRICING list above. NEVER guess a price.
-4. Calculate: subtotal = qty × unitPrice. Tax = subtotal × 0.0825. Total = subtotal + tax.
-5. Present a clear order summary with line items, subtotal, tax, and total.
-6. Ask: "Does everything look correct? I'll create your QuickBooks invoice and email it to you."
-7. When the customer confirms, respond with a summary message AND append this exact block at the end:
+3. Look up the exact unit price from the LIVE QBO PRICING list above. NEVER guess or round a price.
+4. PRICING MATH (critical):
+   - QBO prices are PER BAR/UNIT — not per bundle
+   - If customer orders N BUNDLES of #X rebar: total bars = N × bundle_qty, subtotal = total_bars × unitPrice
+   - If customer orders N BARS: subtotal = N × unitPrice
+   - The bundle price is pre-calculated in the price list — use it directly to verify your math
+   - For non-rebar items (lumber, accessories, etc): subtotal = qty × unitPrice straight
+5. Tax = subtotal × 0.0825. Total = subtotal + tax.
+6. Present a clear order summary: show quantity in both bars AND bundles for rebar, price per bar, bundle total, subtotal, tax, total.
+7. Ask: "Does everything look correct? I'll create your QuickBooks invoice and email it to you."
+8. When the customer confirms, respond with a summary message AND append this exact block at the end:
 
 \`\`\`order
 {
@@ -633,7 +647,9 @@ ORDER FLOW — follow this exactly when a customer wants to place an order:
 \`\`\`
 
 RULES:
-- ALWAYS use exact prices from the LIVE QBO PRICING list — never estimate or make up prices
+- ALWAYS use exact prices from the LIVE QBO PRICING list — never estimate, round, or make up prices
+- qty in the order JSON = total individual bars/units (e.g. 3 bundles of #4 = qty 450)
+- unitPrice in the order JSON = the per-bar/unit price from QBO (e.g. $7.367)
 - If a product isn't in the price list, say "call 469-631-7730 for pricing on that item"
 - Default to 20' rebar — never ask the customer what length
 - Be friendly and concise
