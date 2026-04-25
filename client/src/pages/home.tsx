@@ -9,10 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Upload, FileText, Phone, Mail, User, Building2,
-  CheckCircle2, ArrowRight, Clock, Truck, Award, Link
+  CheckCircle2, ArrowRight, Clock, Truck, Award, Link, MessageSquare
 } from "lucide-react";
+import ChatPage from "./chat";
 
 export default function HomePage() {
+  const [activeTab, setActiveTab] = useState<"estimate" | "chat">("estimate");
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -188,9 +190,47 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Main form */}
-      <main className="flex-1 py-12 px-4">
+      {/* Main content */}
+      <main className="flex-1 py-10 px-4">
         <div className="max-w-2xl mx-auto">
+
+          {/* Tab Toggle */}
+          <div className="flex rounded-xl border border-white/10 bg-white/5 p-1 mb-6">
+            <button
+              onClick={() => setActiveTab("estimate")}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
+                activeTab === "estimate"
+                  ? "bg-[#C8D400] text-black shadow"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              <FileText className="w-4 h-4" />
+              Estimate
+            </button>
+            <button
+              onClick={() => setActiveTab("chat")}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
+                activeTab === "chat"
+                  ? "bg-[#C8D400] text-black shadow"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              Order Chat
+            </button>
+          </div>
+
+          {/* Chat tab */}
+          {activeTab === "chat" && (
+            <Card className="border-border shadow-lg" style={{ height: "580px", display: "flex", flexDirection: "column" }}>
+              <CardContent className="p-0 flex flex-col flex-1 overflow-hidden">
+                <ChatPage />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Estimate tab */}
+          {activeTab === "estimate" && (
           <Card className="border-border shadow-lg">
             <CardContent className="p-6 sm:p-8">
               <h2 className="text-xl font-bold mb-1" style={{ fontFamily: "'Cabinet Grotesk', sans-serif" }}>
@@ -409,6 +449,7 @@ export default function HomePage() {
               </form>
             </CardContent>
           </Card>
+          )}
 
           {/* Trust signals */}
           <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">

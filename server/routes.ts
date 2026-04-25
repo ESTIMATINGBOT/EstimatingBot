@@ -553,6 +553,82 @@ export async function registerRoutes(httpServer: Server, app: Express) {
     })();
   });
 
+  // ── AI ORDER CHAT ────────────────────────────────────────────────────────────
+  // Stateless chat endpoint — each call sends full history + system prompt to OpenAI
+  // Session history is managed client-side to keep the server stateless
+  app.post("/api/chat", express.json({ limit: "64kb" }), async (req, res) => {
+    const { messages } = req.body as {
+      messages: { role: "user" | "assistant"; content: string }[];
+    };
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: "messages array required" });
+    }
+
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (!openaiKey) return res.status(500).json({ error: "OpenAI not configured" });
+
+    const systemPrompt = `You are the RCP TextBot, an AI assistant for Rebar Concrete Products — a rebar and concrete supply company based in McKinney, TX.
+
+Your job is to help customers with:
+1. Rebar material questions (sizes, lengths, pricing inquiries)
+2. Placing rebar orders (walk them through size, quantity, length, delivery vs pickup)
+3. Estimating questions (explain that they can upload plans using the Estimate tab on this page for an automated AI takeoff)
+4. General concrete/construction supply questions
+
+Company info:
+- Name: Rebar Concrete Products
+- Address: 2112 N Custer Rd, McKinney, TX 75071
+- Phone: 469-631-7730
+- Email: Office@RebarConcreteProducts.com
+- Hours: Monday–Friday, 6:00 AM – 3:00 PM CST
+- SMS ordering: Text (817) 880-0900 to place orders via text
+
+Products we carry:
+- Straight rebar: #3 through #11 in 20-foot lengths (default)
+- 40-foot rebar: available in #7+ only, full bundles only
+- Concrete accessories: dobie bricks (concrete chairs), tie wire, bar ties, metal stakes, plastic stakes, poly sheeting, lumber
+- Ready-mix concrete: 3000–4500 PSI
+
+Bundle quantities (20' bar): #3=266, #4=150, #5=96, #6=68, #7=50, #8=38, #9=30, #10=24, #11=18
+
+Tax rate: 8.25% (McKinney/Collin County TX)
+
+IMPORTANT RULES:
+- You cannot process payments or create invoices on the website — for full order processing and invoicing, direct customers to text (817) 880-0900
+- For plan uploads and automated estimates, direct customers to use the Estimate tab on this page
+- Be friendly, concise, and helpful
+- If a customer wants to place an order, collect: bar size, quantity, length (default 20'), delivery address or pickup, and their name/phone
+- Then tell them to text that info to (817) 880-0900 to complete the order with invoicing
+- Never make up prices — tell customers to call 469-631-7730 or text (817) 880-0900 for current pricing`;
+
+    try {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${openaiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [{ role: "system", content: systemPrompt }, ...messages],
+          max_tokens: 500,
+          temperature: 0.7,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.text();
+        return res.status(500).json({ error: `OpenAI error: ${err}` });
+      }
+
+      const data = await response.json() as any;
+      const reply = data.choices?.[0]?.message?.content || "Sorry, I couldn't generate a response. Please call us at 469-631-7730.";
+      res.json({ reply });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Download estimate PDF (available for 60s after completion)
   app.get("/api/bids/:id/download", (req, res) => {
     const bid = storage.getBid(Number(req.params.id));
