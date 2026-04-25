@@ -754,8 +754,9 @@ PRICING MATH (CRITICAL)
 - Format every order summary:
   Subtotal: $X,XXX.XX
   Tax (8.25%): $XXX.XX
-  Delivery: $XX.XX (if applicable)
+  Delivery: $XX.XX (if applicable — always show BEFORE asking about invoice)
   Total: $X,XXX.XX
+- For delivery orders: ALWAYS calculate and show the delivery fee in the order summary before asking "Shall I go ahead and create your invoice?" — never ask for invoice confirmation without the delivery fee already shown in the total.
 - qty in order JSON = total individual bars/units (3 bundles of #4 = qty 450)
 - unitPrice in order JSON = exact per-bar/unit price from QBO
 
