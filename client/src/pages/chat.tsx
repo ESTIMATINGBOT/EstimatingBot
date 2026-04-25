@@ -78,6 +78,14 @@ export default function ChatPage() {
         }),
       });
       const data = await res.json();
+      // Customer not on file — fraud prevention
+      if (res.status === 403 && data.error === "customer_not_found") {
+        addMessage({
+          role: "assistant",
+          content: `We don’t have an account on file for **${order.customerName}**. To place orders online, you’ll need an account with us first.\n\nGive us a call at **469-631-7730** or stop by **2112 N Custer Rd, McKinney, TX 75071** and we’ll get you set up — it only takes a minute.`,
+        });
+        return;
+      }
       if (!res.ok || !data.success) throw new Error(data.error || "Invoice creation failed");
       setInvoice({ invoiceNumber: data.invoiceNumber, paymentLink: data.paymentLink, total: data.total });
       addMessage({
@@ -87,7 +95,7 @@ export default function ChatPage() {
     } catch (err: any) {
       addMessage({
         role: "assistant",
-        content: `Sorry, there was an issue creating your invoice. Please call us at **469-631-7730** and we'll get it sorted out quickly.`,
+        content: `Sorry, there was an issue creating your invoice. Please call us at **469-631-7730** and we’ll get it sorted out quickly.`,
       });
     } finally {
       setInvoicing(false);
