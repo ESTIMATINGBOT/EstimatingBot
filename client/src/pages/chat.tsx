@@ -108,9 +108,10 @@ export default function ChatPage() {
 
   // Detect a full delivery address in the user's message and return the real distance/fee
   const lookupDelivery = async (text: string): Promise<{ miles: number; fee: number; freeThreshold: number | null } | null> => {
-    // Must have a street number + street name + city/state pattern to be a real address
-    const hasAddress = /\d+\s+[\w\s]+,\s*[\w\s]+,\s*[a-zA-Z]{2}\s*\d{5}/.test(text) ||
-      /\d+\s+[\w\s]+(blvd|ave|rd|st|dr|ln|way|fwy|hwy|pkwy|ct|cir|pl)[,\s]+[\w\s]+,\s*[a-zA-Z]{2}/i.test(text);
+    // Match: street number + road type + city + state (with or without commas, zip optional)
+    const hasAddress =
+      /\d+\s+[\w\s]+(blvd|ave|rd|st|dr|ln|way|fwy|hwy|pkwy|ct|cir|pl|street|avenue|road|drive|lane|highway|freeway)[,\s]+[\w\s]+[,\s]+[a-zA-Z]{2}(\s*\d{5})?/i.test(text) ||
+      /\d+\s+[\w\s]+,\s*[\w\s]+,\s*[a-zA-Z]{2}(\s*\d{5})?/.test(text);
     if (!hasAddress) return null;
     try {
       const r = await fetch(`/api/calc-delivery?address=${encodeURIComponent(text)}`);
