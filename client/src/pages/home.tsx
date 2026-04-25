@@ -14,15 +14,15 @@ import {
 import ChatPage from "./chat";
 
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState<"estimate" | "chat">("estimate");
+  const [activeTab, setActiveTab] = useState<"estimate" | "chat">("chat");
   const [, navigate] = useLocation();
 
   // Rotating hero headlines
   const headlines = [
-    { line1: "Upload your plans.", line2: "Get a rebar estimate.", tab: "estimate" as const },
-    { line1: "Have a concrete question?", line2: "Ask our AI.", tab: "chat" as const },
-    { line1: "Need a quote or invoice?", line2: "Done in minutes.", tab: "chat" as const },
-    { line1: "Want to place an order?", line2: "We handle it all.", tab: "chat" as const },
+    { line1: "Have a question about rebar?", line2: "Our AI knows the answer.", tab: "chat" as const },
+    { line1: "Need a quote or invoice?", line2: "Get one in under a minute.", tab: "chat" as const },
+    { line1: "Want to place an order?", line2: "Chat it in. Invoice sent.", tab: "chat" as const },
+    { line1: "Got plans? Upload them.", line2: "Get a full rebar takeoff.", tab: "estimate" as const },
   ];
   const [headlineIdx, setHeadlineIdx] = useState(0);
   const [fadeIn, setFadeIn] = useState(true);
@@ -223,7 +223,7 @@ export default function HomePage() {
               }`}
             >
               <FileText className="w-4 h-4" />
-              Estimate
+              Instant Takeoff
             </button>
             <button
               onClick={() => setActiveTab("chat")}
@@ -234,15 +234,15 @@ export default function HomePage() {
               }`}
             >
               <MessageSquare className="w-4 h-4" />
-              Order Chat
+              AI Assistant
             </button>
           </div>
 
           {/* Sub-caption that changes with tab */}
           <p className="text-gray-500 text-xs mt-3">
             {activeTab === "estimate"
-              ? "Upload structural PDF → AI takeoff → estimate emailed in minutes"
-              : "Ask questions, get quotes, place orders & receive a QuickBooks invoice"}
+              ? "Upload your structural PDF — our AI reads every page, extracts all rebar, and emails you a branded preliminary estimate."
+              : "Ask anything. Get quotes. Place orders. Receive a real QuickBooks invoice — all without picking up the phone."}
           </p>
         </div>
       </section>
@@ -252,9 +252,9 @@ export default function HomePage() {
         <div className="max-w-3xl mx-auto">
           <div className="grid grid-cols-3 gap-4 text-center">
             {[
-              { icon: Upload, step: "1", label: "Upload PDF", desc: "Your structural plans" },
-              { icon: FileText, step: "2", label: "AI Takeoff", desc: "Automated rebar extraction" },
-              { icon: Mail, step: "3", label: "Get Estimate", desc: "Delivered to your inbox" },
+              { icon: Upload, step: "1", label: "Upload Plans", desc: "PDF structural/engineering sheets" },
+              { icon: FileText, step: "2", label: "AI Reads Every Page", desc: "Bar sizes, spacing, schedules, details" },
+              { icon: Mail, step: "3", label: "Estimate in Your Inbox", desc: "Branded PDF, typically within minutes" },
             ].map(({ icon: Icon, step, label, desc }) => (
               <div key={step} className="flex flex-col items-center gap-2">
                 <div className="w-10 h-10 rounded-full bg-[#C8D400] flex items-center justify-center text-black font-bold text-sm">
@@ -542,9 +542,9 @@ export default function HomePage() {
           {/* Trust signals */}
           <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
             {[
-              { icon: Clock, label: "Fast Turnaround", desc: "Estimates typically within minutes" },
-              { icon: Award, label: "Est. 2022", desc: "Rebar specialists in McKinney, TX" },
-              { icon: Truck, label: "Material Only", desc: "We supply the steel — you place it" },
+              { icon: MessageSquare, label: "AI Chat Orders", desc: "Ask, quote, order & invoice without a phone call" },
+              { icon: FileText, label: "Instant Takeoff", desc: "AI reads your plans and builds a full rebar estimate" },
+              { icon: Clock, label: "Fast & Accurate", desc: "Quotes in seconds, estimates in minutes" },
             ].map(({ icon: Icon, label, desc }) => (
               <div key={label} className="flex flex-col items-center gap-1.5 p-4 rounded-xl bg-muted/40">
                 <Icon className="w-5 h-5 text-[#5a6200]" />
