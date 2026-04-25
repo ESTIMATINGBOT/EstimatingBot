@@ -14,6 +14,7 @@ interface OrderData {
   customerPhone?: string;
   customerCompany?: string;
   deliveryAddress?: string;
+  deliveryNotes?: string;
   items?: { name: string; qboItemId: string; qty: number; unitPrice: number; description?: string }[];
   subtotal?: number;
   tax?: number;
@@ -74,6 +75,7 @@ export default function ChatPage() {
           customerPhone: order.customerPhone || "",
           customerCompany: order.customerCompany || "",
           deliveryAddress: order.deliveryAddress || "",
+          deliveryNotes: order.deliveryNotes || "",
           items: order.items,
         }),
       });
