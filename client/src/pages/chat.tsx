@@ -92,11 +92,13 @@ export default function ChatPage() {
         return;
       }
       if (!res.ok || !data.success) throw new Error(data.error || "Invoice creation failed");
-      setInvoice({ invoiceNumber: data.invoiceNumber, paymentLink: data.paymentLink, total: data.total });
+      const invoiceTotal = typeof data.total === "number" ? data.total : parseFloat(data.total) || 0;
+      setInvoice({ invoiceNumber: data.invoiceNumber, paymentLink: data.paymentLink, total: invoiceTotal });
       addMessage({
         role: "assistant",
-        content: `Invoice #${data.invoiceNumber} has been created for **$${data.total.toFixed(2)}** (includes 8.25% tax).${order.customerEmail ? ` A copy has been emailed to ${order.customerEmail}.` : ""} You can also pay using the link below.`,
+        content: `Invoice #${data.invoiceNumber} has been created for **$${invoiceTotal.toFixed(2)}** (includes 8.25% tax).${order.customerEmail ? ` A copy has been emailed to ${order.customerEmail}.` : ""} You can also pay using the link below.`,
       });
+      return; // success — skip catch
     } catch (err: any) {
       console.error("[invoice error]", err?.message, err);
       addMessage({
