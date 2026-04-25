@@ -82,7 +82,7 @@ export default function ChatPage() {
       if (res.status === 403 && data.error === "customer_not_found") {
         addMessage({
           role: "assistant",
-          content: `We don’t have an account on file for **${order.customerName}**. To place orders online, you’ll need an account with us first.\n\nGive us a call at **469-631-7730** or stop by **2112 N Custer Rd, McKinney, TX 75071** and we’ll get you set up — it only takes a minute.`,
+          content: `We weren’t able to verify an account for **${order.customerName}** with that phone number. To place orders online you’ll need an account on file with us.\n\nGive us a call at **469-631-7730** or stop by **2112 N Custer Rd, McKinney, TX 75071** and we’ll get you set up — it only takes a minute.`,
         });
         return;
       }
@@ -90,7 +90,7 @@ export default function ChatPage() {
       setInvoice({ invoiceNumber: data.invoiceNumber, paymentLink: data.paymentLink, total: data.total });
       addMessage({
         role: "assistant",
-        content: `Invoice #${data.invoiceNumber} has been created for **$${data.total.toFixed(2)}** (includes 8.25% tax). A copy has been emailed to ${order.customerEmail}. You can also pay using the link below.`,
+        content: `Invoice #${data.invoiceNumber} has been created for **$${data.total.toFixed(2)}** (includes 8.25% tax).${order.customerEmail ? ` A copy has been emailed to ${order.customerEmail}.` : ""} You can also pay using the link below.`,
       });
     } catch (err: any) {
       addMessage({

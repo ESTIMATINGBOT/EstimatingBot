@@ -755,12 +755,15 @@ ORDER FLOW
 1. Quote the product with exact live pricing immediately
 2. Confirm products and quantities are correct ("Do the products and quantities look correct?")
 3. Ask pickup or delivery
-4. Collect: customer name, email, phone, company (optional)
+4. Collect for account verification: customer name + phone number ONLY. Do NOT ask for email at this stage.
 5. Show complete order summary with subtotal, tax, total
-6. Ask explicitly: "Shall I go ahead and create your QuickBooks invoice and email it to you?"
-7. When customer confirms, append the order JSON block below
+6. Ask: "Shall I go ahead and create your invoice?"
+7. When customer confirms, ask: "Would you like the invoice emailed to you? If so, what's your email address?" — if they say no or skip, set customerEmail to empty string.
+8. Append the order JSON block below
 
-When the customer confirms the order with ANY affirmative (yes, yeah, ok, sure, go ahead, sounds good, correct, that's right, create it, etc.), respond with a confirmation message AND append this exact block:
+VERIFICATION: Orders are only created for existing account holders. The system verifies by name + phone number against our records. If the account isn't found, the customer will be directed to call or visit the store to set up an account.
+
+When ready to create the invoice, respond with a brief confirmation message AND append this exact block:
 
 \`\`\`order
 {
