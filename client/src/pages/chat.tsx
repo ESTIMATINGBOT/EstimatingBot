@@ -113,13 +113,6 @@ export default function ChatPage() {
     setInput("");
     setLoading(true);
 
-    // If there's a pending order and customer confirms
-    if (pendingOrder && /^(yes|confirm|go ahead|do it|send|ok|looks good|correct|yep|sure|please)/i.test(text)) {
-      setLoading(false);
-      await createInvoice(pendingOrder);
-      return;
-    }
-
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -131,17 +124,18 @@ export default function ChatPage() {
       const data = await res.json();
       const replyText: string = data.reply || "Sorry, something went wrong. Please call 469-631-7730.";
 
-      // Check if AI embedded a structured order JSON block
+      // Check if AI embedded a structured order JSON block — auto-fire invoice immediately
       const orderMatch = replyText.match(/```order\n([\s\S]+?)\n```/);
       if (orderMatch) {
         try {
           const order: OrderData = JSON.parse(orderMatch[1]);
-          if (order.readyToInvoice && order.customerName && order.customerEmail && order.items?.length) {
-            setPendingOrder(order);
-            // Show the reply without the JSON block
+          if (order.readyToInvoice && order.customerName && order.customerPhone && order.items?.length) {
+            // Show the reply without the JSON block first
             const cleanReply = replyText.replace(/```order\n[\s\S]+?\n```/, "").trim();
             addMessage({ role: "assistant", content: cleanReply });
             setLoading(false);
+            // Auto-create invoice immediately — no extra confirm button needed
+            await createInvoice(order);
             return;
           }
         } catch {}
@@ -183,29 +177,6 @@ export default function ChatPage() {
             </div>
           </div>
         ))}
-
-        {/* Pending order confirm buttons */}
-        {pendingOrder && !invoicing && !invoice && (
-          <div className="flex justify-start">
-            <div className="ml-11 space-y-2">
-              <p className="text-xs text-gray-400">Ready to create your invoice?</p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => send("Yes, confirm my order")}
-                  className="px-4 py-2 rounded-lg bg-[#C8D400] text-black text-sm font-semibold hover:bg-[#b0bb00] transition-colors flex items-center gap-1.5"
-                >
-                  <CheckCircle2 className="w-4 h-4" /> Confirm & Invoice
-                </button>
-                <button
-                  onClick={() => { setPendingOrder(null); send("Actually, let me make some changes to my order."); }}
-                  className="px-4 py-2 rounded-lg border border-white/20 text-gray-300 text-sm hover:border-white/40 transition-colors"
-                >
-                  Make Changes
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Invoice result card */}
         {invoice && (
@@ -271,7 +242,7 @@ export default function ChatPage() {
         <div className="flex gap-2 items-end">
           <Textarea
             ref={textareaRef}
-            placeholder={pendingOrder ? "Type yes to confirm or describe any changes..." : "Ask about rebar, place an order..."}
+            placeholder="Ask about rebar, place an order..."
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={onKeyDown}
