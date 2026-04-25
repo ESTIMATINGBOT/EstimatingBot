@@ -34,7 +34,7 @@ export default function HomePage() {
         setHeadlineIdx(i => (i + 1) % headlines.length);
         setFadeIn(true);
       }, 400);
-    }, 3500);
+    }, 6000);
     return () => clearInterval(timer);
   }, []);
   const { toast } = useToast();
