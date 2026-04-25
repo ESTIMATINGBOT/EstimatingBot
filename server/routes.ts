@@ -573,7 +573,8 @@ export async function registerRoutes(httpServer: Server, app: Express) {
     try {
       const priceRes = await fetch("https://rcp-sms-bot-production.up.railway.app/api/qbo/items");
       if (priceRes.ok) {
-        const priceData = await priceRes.json() as any[];
+        const priceJson = await priceRes.json() as any;
+        const priceData: any[] = Array.isArray(priceJson) ? priceJson : (priceJson.items ?? []);
         const lines = priceData
           .filter((p: any) => p.unitPrice > 0 && p.active)
           .map((p: any) => {
