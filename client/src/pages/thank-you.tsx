@@ -48,6 +48,11 @@ export default function ThankYouPage() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
+      {/* Beta banner */}
+      <div className="w-full bg-yellow-400 text-black text-center text-xs font-bold py-2 px-4 tracking-wide">
+        ⚠️ This tool is currently in beta testing. Results may vary — all estimates should be verified before use.
+      </div>
+
       {/* Header */}
       <header className="bg-black text-white">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 flex items-center justify-between py-0">
