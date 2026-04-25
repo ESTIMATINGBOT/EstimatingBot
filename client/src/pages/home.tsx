@@ -247,8 +247,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* How it works */}
-      <section className="bg-[#0a0a0a] border-y border-[#1a1a1a] py-8 px-4">
+      {/* How it works — only show for Instant Takeoff */}
+      {activeTab === "estimate" && <section className="bg-[#0a0a0a] border-y border-[#1a1a1a] py-8 px-4">
         <div className="max-w-3xl mx-auto">
           <div className="grid grid-cols-3 gap-4 text-center">
             {[
@@ -266,9 +266,10 @@ export default function HomePage() {
             ))}
           </div>
         </div>
-      </section>
+      </section>}
 
-      {/* Best Results Tips */}
+      {/* Best Results Tips — only show for Instant Takeoff */}
+      {activeTab === "estimate" &&
       <section className="bg-[#111] border-b border-[#1e1e1e] py-8 px-4">
         <div className="max-w-3xl mx-auto">
           <div className="flex items-center gap-2 mb-4">
@@ -304,21 +305,26 @@ export default function HomePage() {
             </div>
           </div>
         </div>
-      </section>
+      </section>}
 
-      {/* Main content */}
+      {/* Chat panel — immediately below hero, full-width black, no gap */}
+      {activeTab === "chat" && (
+        <div className="bg-black flex-1 flex flex-col" style={{ minHeight: "620px" }}>
+          <div className="max-w-2xl mx-auto w-full px-4 py-6 flex flex-col flex-1">
+            <div className="rounded-xl border border-white/10 shadow-lg bg-[#0f0f0f] flex flex-col" style={{ height: "580px", overflow: "hidden" }}>
+              <ChatPage />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main content — only for Instant Takeoff */}
+      {activeTab === "estimate" && (
       <main className="flex-1 py-10 px-4">
         <div className="max-w-2xl mx-auto">
 
-          {/* Chat tab */}
-          {activeTab === "chat" && (
-            <div className="rounded-xl border border-white/10 shadow-lg bg-[#0f0f0f]" style={{ height: "580px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              <ChatPage />
-            </div>
-          )}
-
           {/* Estimate tab */}
-          {activeTab === "estimate" && (
+          {true && (
           <Card className="border-border shadow-lg">
             <CardContent className="p-6 sm:p-8">
               <h2 className="text-xl font-bold mb-1" style={{ fontFamily: "'Cabinet Grotesk', sans-serif" }}>
@@ -555,6 +561,7 @@ export default function HomePage() {
           </div>
         </div>
       </main>
+      )}
 
       {/* Footer */}
       <footer className="bg-black text-gray-400 py-6 px-4">
