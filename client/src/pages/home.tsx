@@ -409,7 +409,7 @@ export default function HomePage() {
           <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
             {[
               { icon: Clock, label: "Fast Turnaround", desc: "Estimates typically within minutes" },
-              { icon: Award, label: "Since 1987", desc: "Rebar specialists in McKinney, TX" },
+              { icon: Award, label: "Est. 2022", desc: "Rebar specialists in McKinney, TX" },
               { icon: Truck, label: "Material Only", desc: "We supply the steel — you place it" },
             ].map(({ icon: Icon, label, desc }) => (
               <div key={label} className="flex flex-col items-center gap-1.5 p-4 rounded-xl bg-muted/40">
