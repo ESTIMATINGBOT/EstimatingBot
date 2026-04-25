@@ -260,11 +260,9 @@ export default function HomePage() {
 
           {/* Chat tab */}
           {activeTab === "chat" && (
-            <Card className="border-border shadow-lg" style={{ height: "580px", display: "flex", flexDirection: "column" }}>
-              <CardContent className="p-0 flex flex-col flex-1 overflow-hidden">
-                <ChatPage />
-              </CardContent>
-            </Card>
+            <div className="rounded-xl border border-white/10 shadow-lg bg-[#0f0f0f]" style={{ height: "580px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <ChatPage />
+            </div>
           )}
 
           {/* Estimate tab */}
