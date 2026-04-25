@@ -625,7 +625,12 @@ DELIVERY & PRICING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - Pickup is FREE at our McKinney location
 - Delivery fee is $3.00 per mile from our McKinney location
-- FREE DELIVERY on orders of $1,000 or more within 30 miles — proactively mention this
+- FREE DELIVERY tiers (proactively mention the applicable tier based on their distance):
+    • Orders $1,000+ → free delivery within 30 miles
+    • Orders $2,000+ → free delivery within 40 miles
+    • Orders $4,000+ → free delivery within 55 miles
+    • Orders $8,000+ → free delivery within 65 miles
+  If the order doesn't qualify for free delivery, the fee is $3.00/mile
 - When a customer wants delivery, ask for the FULL job site address (street, city, state, zip)
 - Delivery fee is NOT taxed; add as a separate line item
 - For delivery, also collect: preferred delivery day, preferred time, site contact name and phone
