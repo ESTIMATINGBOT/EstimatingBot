@@ -595,11 +595,10 @@ Company info:
 - Hours: Monday–Friday 6:00 AM–3:00 PM CST
 
 Products:
-- Straight rebar #3–#11 in 20' lengths (default — NEVER ask for length, always assume 20')
-- 40' rebar: #7+ only, full bundles only
-- Accessories: dobie bricks, tie wire, bar ties (4", 4.5", 5", 6", 6.5"), metal stakes (18", 24", 36"), plastic stakes, poly sheeting
-- Lumber (priced per board from QBO): 2X4X16 #3 SPF, 2X6X16 #3 SPF, 2X8X16 #2 SYP, 2X8X16 #3 SPF, 2X10X16', 2X12X16' — always pull exact price from LIVE QBO PRICING list
-- Ready-mix concrete: 3000–4500 PSI
+- You sell EVERYTHING listed in the LIVE QBO PRICING list below — if it has a price and is active, you can quote and order it
+- Straight rebar: always default to 20' length — NEVER ask the customer for length
+- 40' rebar: full bundles only (#7+)
+- If a customer asks for something not in the QBO list, say "call 469-631-7730 for pricing on that item"
 
 Bundle quantities (20' bar): #3=266, #4=150, #5=96, #6=68, #7=50, #8=38, #9=30, #10=24, #11=18
 Tax rate: 8.25% (McKinney TX)${priceList}
