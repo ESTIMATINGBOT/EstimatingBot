@@ -158,10 +158,12 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
-      {/* Beta banner */}
-      <div className="w-full bg-yellow-400 text-black text-center text-xs font-bold py-2 px-4 tracking-wide">
-        ⚠️ This tool is currently in beta testing. Results may vary — all estimates should be verified before use.
-      </div>
+      {/* Beta banner — only on Instant Takeoff */}
+      {activeTab === "estimate" && (
+        <div className="w-full bg-yellow-400 text-black text-center text-xs font-bold py-2 px-4 tracking-wide">
+          ⚠️ This tool is currently in beta testing. Results may vary — all estimates should be verified before use.
+        </div>
+      )}
 
       <header className="bg-black text-white">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 flex items-center justify-between py-0">
@@ -330,12 +332,12 @@ export default function HomePage() {
 
       {/* Main content — only for Instant Takeoff */}
       {activeTab === "estimate" && (
-      <main className="flex-1 py-10 px-4">
+      <main className="flex-1 py-10 px-4 bg-black">
         <div className="max-w-2xl mx-auto">
 
           {/* Estimate tab */}
           {true && (
-          <Card className="border-border shadow-lg">
+          <Card className="border-white/10 shadow-lg bg-[#0f0f0f]">
             <CardContent className="p-6 sm:p-8">
               <h2 className="text-xl font-bold mb-1" style={{ fontFamily: "'Cabinet Grotesk', sans-serif" }}>
                 Request Your Estimate
