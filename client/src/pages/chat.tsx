@@ -125,13 +125,17 @@ export default function ChatPage() {
     }
   };
 
-  const ADDRESS_RE =
-    /\d+\s+[\w. ]+(blvd|ave|rd|st|dr|ln|way|fwy|hwy|pkwy|ct|cir|pl|street|avenue|road|drive|lane|highway|freeway)[,\s]+[\w\s]+[,\s]+[a-zA-Z]{2}(\s*\d{5})?/i;
-
-  // Extract a delivery address from any text
+  // Extract a delivery address from any text.
+  // Strategy 1: grab everything up to and including a 5-digit zip code.
+  // Strategy 2: grab street number + road keyword + city + 2-letter state (no zip).
   const extractAddress = (text: string): string | null => {
-    const m = text.match(ADDRESS_RE);
-    return m ? m[0].trim() : null;
+    // Strategy 1: text contains a zip code — extract up to the zip
+    const zipMatch = text.match(/(\d+\s+[\w][\w\s.,#-]{3,}?\b[a-zA-Z]{2}\s*\d{5})/);
+    if (zipMatch) return zipMatch[1].trim();
+    // Strategy 2: street number + road type keyword + anything + 2-letter state
+    const roadMatch = text.match(/(\d+\s+[\w\s.,#-]+(blvd|ave|rd|st|dr|ln|way|fwy|hwy|pkwy|ct|cir|pl|street|avenue|road|drive|lane|highway|freeway)[\w\s.,#-]+\b[a-zA-Z]{2}\b)/i);
+    if (roadMatch) return roadMatch[1].trim();
+    return null;
   };
 
   // Look up real Google Maps distance for an address
