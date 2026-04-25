@@ -27,7 +27,7 @@ interface InvoiceResult {
   total: number;
 }
 
-const SMS_BOT_URL = "https://rcp-sms-bot-production.up.railway.app";
+
 
 const WELCOME: Message = {
   role: "assistant",
@@ -65,7 +65,7 @@ export default function ChatPage() {
   const createInvoice = async (order: OrderData) => {
     setInvoicing(true);
     try {
-      const res = await fetch(`${SMS_BOT_URL}/api/web-order`, {
+      const res = await fetch("/api/web-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -93,6 +93,7 @@ export default function ChatPage() {
         content: `Invoice #${data.invoiceNumber} has been created for **$${data.total.toFixed(2)}** (includes 8.25% tax).${order.customerEmail ? ` A copy has been emailed to ${order.customerEmail}.` : ""} You can also pay using the link below.`,
       });
     } catch (err: any) {
+      console.error("[invoice error]", err?.message, err);
       addMessage({
         role: "assistant",
         content: `Sorry, there was an issue creating your invoice. Please call us at **469-631-7730** and we’ll get it sorted out quickly.`,

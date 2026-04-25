@@ -828,6 +828,22 @@ Always recommend consulting a structural engineer for project-specific structura
     }
   });
 
+  // ── Web order proxy (avoids CORS — browser calls this, we forward to SMS bot) ──
+  app.post("/api/web-order", express.json(), async (req, res) => {
+    try {
+      const SMS_BOT = "https://rcp-sms-bot-production.up.railway.app";
+      const upstream = await fetch(`${SMS_BOT}/api/web-order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body),
+      });
+      const data = await upstream.json() as any;
+      res.status(upstream.status).json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Proxy error" });
+    }
+  });
+
   // Download estimate PDF (available for 60s after completion)
   app.get("/api/bids/:id/download", (req, res) => {
     const bid = storage.getBid(Number(req.params.id));
