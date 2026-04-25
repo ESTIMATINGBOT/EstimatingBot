@@ -81,21 +81,28 @@ export default function ChatPage() {
         if (feeMatch) cachedFee = parseFloat(feeMatch[1]);
       }
 
-      const res = await fetch("/api/web-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customerName: order.customerName,
-          customerEmail: order.customerEmail,
-          customerPhone: order.customerPhone || "",
-          customerCompany: order.customerCompany || "",
-          deliveryAddress: order.deliveryAddress || "",
-          deliveryNotes: order.deliveryNotes || "",
-          deliveryMilesFallback: cachedMiles,
-          deliveryFeeFallback: cachedFee,
-          items: order.items,
-        }),
-      });
+      let res: Response;
+      try {
+        res = await fetchWithTimeout("/api/web-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customerName: order.customerName,
+            customerEmail: order.customerEmail,
+            customerPhone: order.customerPhone || "",
+            customerCompany: order.customerCompany || "",
+            deliveryAddress: order.deliveryAddress || "",
+            deliveryNotes: order.deliveryNotes || "",
+            deliveryMilesFallback: cachedMiles,
+            deliveryFeeFallback: cachedFee,
+            items: order.items,
+          }),
+        }, 25000);
+      } catch (err: any) {
+        const code = err?.message === "TIMEOUT" ? "ERR-INV-TIMEOUT" : "ERR-INV-NETWORK";
+        addMessage({ role: "assistant", content: `We weren't able to reach our invoicing system. Please call us at **469-631-7730** and we'll get it sorted out. (${code})` });
+        return;
+      }
       const data = await res.json();
       // Customer not on file — fraud prevention
       if (res.status === 403 && data.error === "customer_not_found") {
@@ -105,7 +112,10 @@ export default function ChatPage() {
         });
         return;
       }
-      if (!res.ok || !data.success) throw new Error(data.error || "Invoice creation failed");
+      if (!res.ok || !data.success) {
+        const serverCode = data.error ? `ERR-INV-${res.status}` : `ERR-INV-${res.status}`;
+        throw new Error(`${data.error || "Invoice creation failed"} (${serverCode})`);
+      }
       const invoiceTotal = typeof data.total === "number" ? data.total : parseFloat(data.total) || 0;
       setInvoice({ invoiceNumber: data.invoiceNumber, paymentLink: data.paymentLink, total: invoiceTotal });
       addMessage({
@@ -115,9 +125,10 @@ export default function ChatPage() {
       return; // success — skip catch
     } catch (err: any) {
       console.error("[invoice error]", err?.message, err);
+      const errCode = err?.message || "ERR-INV-UNKNOWN";
       addMessage({
         role: "assistant",
-        content: `Sorry, there was an issue creating your invoice. Please call us at **469-631-7730** and we’ll get it sorted out quickly.`,
+        content: `There was an issue creating your invoice — please call us at **469-631-7730** and we'll take care of it right away. (${errCode})`,
       });
     } finally {
       setInvoicing(false);
@@ -141,10 +152,24 @@ export default function ChatPage() {
   // Look up real Google Maps distance for an address
   const lookupDelivery = async (address: string): Promise<{ miles: number; fee: number; freeThreshold: number | null } | null> => {
     try {
-      const r = await fetch(`/api/calc-delivery?address=${encodeURIComponent(address)}`);
+      const r = await fetchWithTimeout(`/api/calc-delivery?address=${encodeURIComponent(address)}`, {}, 10000);
       if (!r.ok) return null;
       return await r.json();
-    } catch { return null; }
+    } catch { return null; } // silent — delivery fee just won't be pre-filled
+  };
+
+  // Fetch with timeout — rejects with a typed error if the request takes too long
+  const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: number): Promise<Response> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } catch (err: any) {
+      if (err?.name === "AbortError") throw new Error("TIMEOUT");
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
   };
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -204,15 +229,26 @@ export default function ChatPage() {
         }
       }
 
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: newHistory.map(m => ({ role: m.role, content: m.content })),
-          imageBase64: imageToSend?.base64 || null,
-          imageMediaType: imageToSend?.mediaType || null,
-        }),
-      });
+      let res: Response;
+      try {
+        res = await fetchWithTimeout("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: newHistory.map(m => ({ role: m.role, content: m.content })),
+            imageBase64: imageToSend?.base64 || null,
+            imageMediaType: imageToSend?.mediaType || null,
+          }),
+        }, 30000);
+      } catch (err: any) {
+        const code = err?.message === "TIMEOUT" ? "ERR-CHAT-TIMEOUT" : "ERR-CHAT-NETWORK";
+        addMessage({ role: "assistant", content: `Something went wrong connecting to the assistant. Please try again or call us at **469-631-7730**. (${code})` });
+        return;
+      }
+      if (!res.ok) {
+        addMessage({ role: "assistant", content: `The assistant returned an error. Please try again or call us at **469-631-7730**. (ERR-CHAT-${res.status})` });
+        return;
+      }
       const data = await res.json();
       const replyText: string = data.reply || "Sorry, something went wrong. Please call 469-631-7730.";
 
@@ -235,8 +271,9 @@ export default function ChatPage() {
       }
 
       addMessage({ role: "assistant", content: replyText });
-    } catch {
-      addMessage({ role: "assistant", content: "Connection error. Please try again or call us at 469-631-7730." });
+    } catch (err: any) {
+      const code = err?.message === "TIMEOUT" ? "ERR-SEND-TIMEOUT" : "ERR-SEND-UNKNOWN";
+      addMessage({ role: "assistant", content: `Something went wrong. Please try again or call us at **469-631-7730**. (${code})` });
     } finally {
       if (!handledByInvoice) {
         setLoading(false);
