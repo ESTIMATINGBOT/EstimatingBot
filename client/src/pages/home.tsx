@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Upload, FileText, Phone, Mail, User, Building2,
-  CheckCircle2, ArrowRight, Clock, Truck, Award, Link, MessageSquare
+  CheckCircle2, ArrowRight, Clock, Truck, Award, Link, MessageSquare, Info
 } from "lucide-react";
 import ChatPage from "./chat";
 
@@ -186,6 +186,44 @@ export default function HomePage() {
                 <div className="text-gray-500 text-xs">{desc}</div>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Best Results Tips */}
+      <section className="bg-[#111] border-b border-[#1e1e1e] py-8 px-4">
+        <div className="max-w-3xl mx-auto">
+          <div className="flex items-center gap-2 mb-4">
+            <Info className="w-4 h-4 text-[#C8D400] flex-shrink-0" />
+            <h2 className="text-white font-bold text-sm uppercase tracking-wider">For Best Results — Upload Plans That Include:</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {[
+              { label: "Foundation / Slab Plans", desc: "Footing layouts, slab-on-grade, mat foundations — any plan showing rebar in concrete" },
+              { label: "Structural Sheets", desc: "Labeled S-sheets (S1, S2, S3…) from your engineer with bar sizes and spacing" },
+              { label: "Bar Schedules / Bar Lists", desc: "Pre-printed schedules showing bar mark, size, length, quantity, and bends" },
+              { label: "Wall & Column Details", desc: "Retaining walls, shear walls, columns, pilasters with vertical and horizontal steel" },
+              { label: "Beam & Grade Beam Details", desc: "Cross-sections showing top/bottom steel, stirrup spacing, and hook details" },
+              { label: "Dimensions & Scale", desc: "Plans must have readable dimensions or a scale bar — the AI uses these to calculate lengths" },
+            ].map(({ label, desc }) => (
+              <div key={label} className="flex gap-3 bg-white/[0.03] border border-white/8 rounded-xl p-3.5">
+                <CheckCircle2 className="w-4 h-4 text-[#C8D400] flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-white text-sm font-semibold leading-snug">{label}</p>
+                  <p className="text-gray-500 text-xs mt-0.5 leading-relaxed">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 flex flex-col sm:flex-row gap-3">
+            <div className="flex-1 bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3">
+              <p className="text-yellow-400 text-xs font-semibold mb-1">⚠ Architectural plans alone won't work</p>
+              <p className="text-gray-400 text-xs leading-relaxed">Floor plans and elevations without rebar callouts can't be estimated. You need the structural (engineer) sheets.</p>
+            </div>
+            <div className="flex-1 bg-[#C8D400]/10 border border-[#C8D400]/20 rounded-xl px-4 py-3">
+              <p className="text-[#C8D400] text-xs font-semibold mb-1">💡 Not sure? Just upload it.</p>
+              <p className="text-gray-400 text-xs leading-relaxed">If the AI can't extract rebar data, our team is automatically notified and will follow up within 1 business day.</p>
+            </div>
           </div>
         </div>
       </section>
