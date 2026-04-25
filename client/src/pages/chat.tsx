@@ -192,15 +192,19 @@ export default function ChatPage() {
                 <CheckCircle2 className="w-5 h-5 text-[#C8D400]" />
                 <span className="text-white font-semibold text-sm">Invoice #{invoice.invoiceNumber}</span>
               </div>
-              <p className="text-gray-300 text-sm">Total: <span className="text-white font-bold">${invoice.total.toFixed(2)}</span></p>
-              <a
-                href={invoice.paymentLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 bg-[#C8D400] text-black text-sm font-bold px-4 py-2 rounded-lg hover:bg-[#b0bb00] transition-colors w-full justify-center"
-              >
-                <ExternalLink className="w-4 h-4" /> Pay Invoice
-              </a>
+              <p className="text-gray-300 text-sm">Total: <span className="text-white font-bold">${typeof invoice.total === "number" ? invoice.total.toFixed(2) : "—"}</span></p>
+              {invoice.paymentLink ? (
+                <a
+                  href={invoice.paymentLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 bg-[#C8D400] text-black text-sm font-bold px-4 py-2 rounded-lg hover:bg-[#b0bb00] transition-colors w-full justify-center"
+                >
+                  <ExternalLink className="w-4 h-4" /> Pay Invoice
+                </a>
+              ) : (
+                <p className="text-xs text-gray-400">Call us at 469-631-7730 to complete payment.</p>
+              )}
             </div>
           </div>
         )}
