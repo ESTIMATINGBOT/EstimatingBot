@@ -373,11 +373,14 @@ export default function HomePage() {
                 </div>
 
                 {/* Disclaimer */}
-                <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3 leading-relaxed">
-                  <strong>PRELIMINARY ESTIMATE NOTICE:</strong> The estimate generated is for bidding purposes only.
-                  Final quantities are subject to a full engineering takeoff upon contract award. Prices subject to
-                  change without notice. Tax rate: 8.25% (McKinney, TX).
-                </p>
+                <div className="rounded-lg border-2 border-yellow-400 bg-yellow-50 p-4 space-y-1">
+                  <p className="text-xs font-extrabold text-yellow-800 uppercase tracking-wide">
+                    ⚠ Preliminary Estimate — Not For Construction
+                  </p>
+                  <p className="text-xs text-yellow-800 leading-relaxed">
+                    This estimate contains <strong>approximate quantities for bidding and budgeting purposes only.</strong> It is <strong>not</strong> a certified material list and is <strong>not suitable for ordering material or use in construction.</strong> Final quantities are subject to a full engineering takeoff upon contract award. Prices are subject to change without notice. Tax rate: 8.25% (McKinney, TX).
+                  </p>
+                </div>
 
                 {/* Submit */}
                 <Button

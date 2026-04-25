@@ -138,6 +138,16 @@ export default function ThankYouPage() {
           )}
 
           {status === "complete" && (
+            <>
+            {/* Prominent disclaimer */}
+            <div className="rounded-lg border-2 border-yellow-400 bg-yellow-50 p-4 text-left space-y-1">
+              <p className="text-xs font-extrabold text-yellow-800 uppercase tracking-wide">
+                ⚠ Preliminary Estimate — Not For Construction
+              </p>
+              <p className="text-xs text-yellow-800 leading-relaxed">
+                This estimate contains <strong>approximate quantities for bidding and budgeting purposes only.</strong> It is <strong>not</strong> a certified material list and is <strong>not suitable for ordering material or use in construction.</strong> Final quantities are subject to a full engineering takeoff upon contract award.
+              </p>
+            </div>
             <div className="bg-green-50 border border-green-200 rounded-xl p-5 text-left space-y-3">
               <div className="flex items-center gap-2 text-sm font-bold text-green-700">
                 <Mail className="w-4 h-4 shrink-0" />
@@ -161,6 +171,7 @@ export default function ThankYouPage() {
                 Didn't receive it? Download your estimate directly
               </a>
             </div>
+            </>
           )}
 
           {(status === "failed" || timedOut) && (
