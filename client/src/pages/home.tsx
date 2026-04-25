@@ -203,10 +203,50 @@ export default function HomePage() {
       {/* Hero */}
       <section className="bg-black text-white pt-12 pb-10 px-4">
         <div className="max-w-3xl mx-auto text-center">
-          {/* Animated badge */}
-          <div className="inline-flex items-center gap-2 bg-[#C8D400]/10 border border-[#C8D400]/30 text-[#C8D400] text-xs font-bold px-3 py-1 rounded-full mb-6 uppercase tracking-wider">
-            <Zap className="w-3.5 h-3.5" />
-            AI-Powered Rebar Tools
+          {/* Hero top row: AI badge + Award seal */}
+          <div className="flex items-center justify-center gap-4 mb-6 flex-wrap">
+            <div className="inline-flex items-center gap-2 bg-[#C8D400]/10 border border-[#C8D400]/30 text-[#C8D400] text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+              <Zap className="w-3.5 h-3.5" />
+              AI-Powered Rebar Tools
+            </div>
+
+            {/* BusinessRate Award Seal */}
+            <svg width="72" height="72" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+              {/* Octagon shape */}
+              <polygon
+                points="21,4 51,4 68,21 68,51 51,68 21,68 4,51 4,21"
+                fill="#111"
+                stroke="url(#goldGrad)"
+                strokeWidth="2"
+              />
+              {/* Inner ring */}
+              <polygon
+                points="22,8 50,8 64,22 64,50 50,64 22,64 8,50 8,22"
+                fill="none"
+                stroke="url(#goldGrad)"
+                strokeWidth="0.75"
+                opacity="0.4"
+              />
+              {/* Stars */}
+              <text x="36" y="18" textAnchor="middle" fontSize="7" fill="#F5C518" letterSpacing="2">★★★★★</text>
+              {/* BEST OF */}
+              <text x="36" y="28" textAnchor="middle" fontSize="7" fontWeight="bold" fill="white" fontFamily="sans-serif">BEST OF</text>
+              {/* 2026 */}
+              <text x="36" y="38" textAnchor="middle" fontSize="11" fontWeight="900" fill="#F5C518" fontFamily="sans-serif">2026</text>
+              {/* Divider */}
+              <line x1="18" y1="41" x2="54" y2="41" stroke="#F5C518" strokeWidth="0.5" opacity="0.5" />
+              {/* McKinney */}
+              <text x="36" y="50" textAnchor="middle" fontSize="5.5" fontWeight="bold" fill="#C8D400" fontFamily="sans-serif" letterSpacing="0.5">McKINNEY, TX</text>
+              {/* BusinessRate */}
+              <text x="36" y="60" textAnchor="middle" fontSize="4.5" fill="#aaa" fontFamily="sans-serif">BusinessRate</text>
+              <defs>
+                <linearGradient id="goldGrad" x1="0" y1="0" x2="72" y2="72" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor="#F5C518" />
+                  <stop offset="50%" stopColor="#FFE066" />
+                  <stop offset="100%" stopColor="#C8960C" />
+                </linearGradient>
+              </defs>
+            </svg>
           </div>
 
           {/* Rotating headline */}
