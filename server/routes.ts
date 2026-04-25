@@ -575,7 +575,6 @@ export async function registerRoutes(httpServer: Server, app: Express) {
         const priceData = await priceRes.json() as any[];
         const lines = priceData
           .filter((p: any) => p.unitPrice > 0 && p.active)
-          .slice(0, 40)
           .map((p: any) => `  - ${p.name}: $${p.unitPrice.toFixed(5)}/unit (QBO ID: ${p.id})`)
           .join("\n");
         priceList = `\n\nLIVE QBO PRICING (use exact prices below, do not guess):\n${lines}`;
@@ -598,7 +597,8 @@ Company info:
 Products:
 - Straight rebar #3–#11 in 20' lengths (default — NEVER ask for length, always assume 20')
 - 40' rebar: #7+ only, full bundles only
-- Accessories: dobie bricks, tie wire, bar ties (4", 4.5", 5", 6", 6.5"), metal stakes (18", 24", 36"), plastic stakes, poly sheeting, lumber
+- Accessories: dobie bricks, tie wire, bar ties (4", 4.5", 5", 6", 6.5"), metal stakes (18", 24", 36"), plastic stakes, poly sheeting
+- Lumber (priced per board from QBO): 2X4X16 #3 SPF, 2X6X16 #3 SPF, 2X8X16 #2 SYP, 2X8X16 #3 SPF, 2X10X16', 2X12X16' — always pull exact price from LIVE QBO PRICING list
 - Ready-mix concrete: 3000–4500 PSI
 
 Bundle quantities (20' bar): #3=266, #4=150, #5=96, #6=68, #7=50, #8=38, #9=30, #10=24, #11=18
