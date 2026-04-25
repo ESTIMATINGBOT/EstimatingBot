@@ -186,6 +186,20 @@ export default function HomePage() {
         <div className="h-[3px] bg-[#C8D400]" />
       </header>
 
+      {/* Award banner */}
+      <div className="w-full bg-[#0a0a0a] border-b border-[#1a1a1a] py-2 px-4">
+        <div className="max-w-5xl mx-auto flex items-center justify-center gap-2">
+          <span className="text-yellow-400 text-base leading-none">🏆</span>
+          <span className="text-yellow-400 text-xs font-bold uppercase tracking-wide">Best of 2026</span>
+          <span className="text-gray-600 text-xs">·</span>
+          <span className="text-gray-300 text-xs font-semibold">BusinessRate — Building Materials Store</span>
+          <span className="text-gray-600 text-xs">·</span>
+          <span className="text-gray-500 text-xs">McKinney, TX</span>
+          <span className="text-gray-600 text-xs">·</span>
+          <span className="text-gray-500 text-xs">Powered by Google Reviews</span>
+        </div>
+      </div>
+
       {/* Hero */}
       <section className="bg-black text-white pt-12 pb-10 px-4">
         <div className="max-w-3xl mx-auto text-center">
