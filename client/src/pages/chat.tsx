@@ -106,12 +106,25 @@ export default function ChatPage() {
     }
   };
 
+  // Detect a full delivery address in the user's message and return the real distance/fee
+  const lookupDelivery = async (text: string): Promise<{ miles: number; fee: number; freeThreshold: number | null } | null> => {
+    // Must have a street number + street name + city/state pattern to be a real address
+    const hasAddress = /\d+\s+[\w\s]+,\s*[\w\s]+,\s*[a-zA-Z]{2}\s*\d{5}/.test(text) ||
+      /\d+\s+[\w\s]+(blvd|ave|rd|st|dr|ln|way|fwy|hwy|pkwy|ct|cir|pl)[,\s]+[\w\s]+,\s*[a-zA-Z]{2}/i.test(text);
+    if (!hasAddress) return null;
+    try {
+      const r = await fetch(`/api/calc-delivery?address=${encodeURIComponent(text)}`);
+      if (!r.ok) return null;
+      return await r.json();
+    } catch { return null; }
+  };
+
   const send = async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
     if (!text || loading) return;
 
     const userMsg: Message = { role: "user", content: text };
-    const newHistory = [...messages, userMsg];
+    let newHistory = [...messages, userMsg];
     setMessages(newHistory);
     setInput("");
     setLoading(true);
@@ -119,6 +132,17 @@ export default function ChatPage() {
     let handledByInvoice = false;
 
     try {
+      // If user message contains a delivery address, look up real distance and inject into history
+      const dist = await lookupDelivery(text);
+      if (dist) {
+        const feeNote = dist.freeThreshold
+          ? `SYSTEM: Google Maps distance from RCP McKinney to customer delivery address: ${dist.miles} miles. Delivery fee: $${dist.fee.toFixed(2)} ($3/mile). Free delivery applies if order total reaches $${dist.freeThreshold.toLocaleString()}.`
+          : `SYSTEM: Google Maps distance from RCP McKinney to customer delivery address: ${dist.miles} miles. Delivery fee: $${dist.fee.toFixed(2)} ($3/mile). This address is beyond 65 miles — delivery fee applies regardless of order size.`;
+        // Inject as a user message so the AI sees it immediately (will be displayed as assistant context note)
+        const sysNote: Message = { role: "user", content: feeNote };
+        newHistory = [...newHistory, sysNote];
+      }
+
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

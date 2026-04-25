@@ -625,12 +625,13 @@ DELIVERY & PRICING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - Pickup is FREE at our McKinney location
 - Delivery fee is $3.00 per mile from our McKinney location
-- FREE DELIVERY tiers (proactively mention the applicable tier based on their distance):
+- FREE DELIVERY tiers:
     • Orders $1,000+ → free delivery within 30 miles
     • Orders $2,000+ → free delivery within 40 miles
     • Orders $4,000+ → free delivery within 55 miles
     • Orders $8,000+ → free delivery within 65 miles
-  If the order doesn't qualify for free delivery, the fee is $3.00/mile
+- CRITICAL: NEVER estimate, guess, or calculate the distance or delivery fee yourself. You do not have GPS or mapping capabilities.
+  When a customer provides a delivery address, the system will automatically inject a SYSTEM message with the exact Google Maps distance and fee. Use ONLY that injected value. If no SYSTEM distance note has appeared yet, do not quote a fee — just confirm the address and tell the customer you are calculating the exact fee.
 - When a customer wants delivery, ask for the FULL job site address (street, city, state, zip)
 - Delivery fee is NOT taxed; add as a separate line item
 - For delivery, also collect: preferred delivery day, preferred time, site contact name and phone
@@ -847,6 +848,20 @@ Always recommend consulting a structural engineer for project-specific structura
       res.json({ reply });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Delivery distance + fee proxy ──────────────────────────────────────
+  app.get("/api/calc-delivery", async (req, res) => {
+    try {
+      const SMS_BOT = "https://rcp-sms-bot-production.up.railway.app";
+      const address = req.query.address as string;
+      if (!address) return res.status(400).json({ error: "address is required" });
+      const upstream = await fetch(`${SMS_BOT}/api/calc-delivery?address=${encodeURIComponent(address)}`);
+      const data = await upstream.json() as any;
+      res.status(upstream.status).json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Proxy error" });
     }
   });
 
