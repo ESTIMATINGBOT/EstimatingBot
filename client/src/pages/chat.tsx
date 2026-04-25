@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, MessageSquare, Phone, Mail } from "lucide-react";
+import { Send, MessageSquare, CheckCircle2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -8,14 +8,34 @@ interface Message {
   content: string;
 }
 
+interface OrderData {
+  customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  customerCompany?: string;
+  deliveryAddress?: string;
+  items?: { name: string; qboItemId: string; qty: number; unitPrice: number; description?: string }[];
+  subtotal?: number;
+  tax?: number;
+  total?: number;
+  readyToInvoice?: boolean;
+}
+
+interface InvoiceResult {
+  invoiceNumber: string;
+  paymentLink: string;
+  total: number;
+}
+
+const SMS_BOT_URL = "https://rcp-sms-bot-production.up.railway.app";
+
 const WELCOME: Message = {
   role: "assistant",
   content:
-    "Hi! I'm the RCP Assistant. I can help you with rebar questions, material quantities, product info, and getting an order started.\n\nFor plan uploads and automated AI estimates, use the **Estimate** tab. To place a full order with invoicing, text us at **(817) 880-0900**.\n\nHow can I help you today?",
+    "Hi! I'm the RCP Assistant. I can help you with rebar questions, material quantities, and placing orders with a QuickBooks invoice.\n\nFor plan uploads and automated AI estimates, use the **Estimate** tab above.\n\nHow can I help you today?",
 };
 
 function renderContent(text: string) {
-  // Basic markdown: **bold**, *italic*, newlines
   const html = text
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.+?)\*/g, "<em>$1</em>")
@@ -27,44 +47,98 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [invoicing, setInvoicing] = useState(false);
+  const [invoice, setInvoice] = useState<InvoiceResult | null>(null);
+  const [pendingOrder, setPendingOrder] = useState<OrderData | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, invoice]);
 
-  const send = async () => {
-    const text = input.trim();
+  const addMessage = (msg: Message) => setMessages(prev => [...prev, msg]);
+
+  const createInvoice = async (order: OrderData) => {
+    setInvoicing(true);
+    try {
+      const res = await fetch(`${SMS_BOT_URL}/api/web-order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName: order.customerName,
+          customerEmail: order.customerEmail,
+          customerPhone: order.customerPhone || "",
+          customerCompany: order.customerCompany || "",
+          deliveryAddress: order.deliveryAddress || "",
+          items: order.items,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Invoice creation failed");
+      setInvoice({ invoiceNumber: data.invoiceNumber, paymentLink: data.paymentLink, total: data.total });
+      addMessage({
+        role: "assistant",
+        content: `Invoice #${data.invoiceNumber} has been created for **$${data.total.toFixed(2)}** (includes 8.25% tax). A copy has been emailed to ${order.customerEmail}. You can also pay using the link below.`,
+      });
+    } catch (err: any) {
+      addMessage({
+        role: "assistant",
+        content: `Sorry, there was an issue creating your invoice. Please call us at **469-631-7730** and we'll get it sorted out quickly.`,
+      });
+    } finally {
+      setInvoicing(false);
+      setPendingOrder(null);
+    }
+  };
+
+  const send = async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim();
     if (!text || loading) return;
 
     const userMsg: Message = { role: "user", content: text };
-    const history = [...messages, userMsg];
-    setMessages(history);
+    const newHistory = [...messages, userMsg];
+    setMessages(newHistory);
     setInput("");
     setLoading(true);
+
+    // If there's a pending order and customer confirms
+    if (pendingOrder && /^(yes|confirm|go ahead|do it|send|ok|looks good|correct|yep|sure|please)/i.test(text)) {
+      setLoading(false);
+      await createInvoice(pendingOrder);
+      return;
+    }
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: history.filter((m) => m.role !== "assistant" || m !== WELCOME).map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
+          messages: newHistory.map(m => ({ role: m.role, content: m.content })),
         }),
       });
       const data = await res.json();
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.reply || "Sorry, something went wrong. Please call 469-631-7730." },
-      ]);
+      const replyText: string = data.reply || "Sorry, something went wrong. Please call 469-631-7730.";
+
+      // Check if AI embedded a structured order JSON block
+      const orderMatch = replyText.match(/```order\n([\s\S]+?)\n```/);
+      if (orderMatch) {
+        try {
+          const order: OrderData = JSON.parse(orderMatch[1]);
+          if (order.readyToInvoice && order.customerName && order.customerEmail && order.items?.length) {
+            setPendingOrder(order);
+            // Show the reply without the JSON block
+            const cleanReply = replyText.replace(/```order\n[\s\S]+?\n```/, "").trim();
+            addMessage({ role: "assistant", content: cleanReply });
+            setLoading(false);
+            return;
+          }
+        } catch {}
+      }
+
+      addMessage({ role: "assistant", content: replyText });
     } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "Connection error. Please try again or call us at 469-631-7730." },
-      ]);
+      addMessage({ role: "assistant", content: "Connection error. Please try again or call us at 469-631-7730." });
     } finally {
       setLoading(false);
       setTimeout(() => textareaRef.current?.focus(), 50);
@@ -83,28 +157,67 @@ export default function ChatPage() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
         {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-          >
+          <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             {msg.role === "assistant" && (
               <div className="w-8 h-8 rounded-full bg-[#C8D400]/20 border border-[#C8D400]/40 flex items-center justify-center flex-shrink-0 mr-3 mt-0.5">
                 <MessageSquare className="w-4 h-4 text-[#C8D400]" />
               </div>
             )}
-            <div
-              className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                msg.role === "user"
-                  ? "bg-[#C8D400] text-black rounded-tr-sm font-medium"
-                  : "bg-white/5 border border-white/10 text-gray-100 rounded-tl-sm"
-              }`}
-            >
+            <div className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+              msg.role === "user"
+                ? "bg-[#C8D400] text-black rounded-tr-sm font-medium"
+                : "bg-white/5 border border-white/10 text-gray-100 rounded-tl-sm"
+            }`}>
               {renderContent(msg.content)}
             </div>
           </div>
         ))}
 
-        {loading && (
+        {/* Pending order confirm buttons */}
+        {pendingOrder && !invoicing && !invoice && (
+          <div className="flex justify-start">
+            <div className="ml-11 space-y-2">
+              <p className="text-xs text-gray-400">Ready to create your invoice?</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => send("Yes, confirm my order")}
+                  className="px-4 py-2 rounded-lg bg-[#C8D400] text-black text-sm font-semibold hover:bg-[#b0bb00] transition-colors flex items-center gap-1.5"
+                >
+                  <CheckCircle2 className="w-4 h-4" /> Confirm & Invoice
+                </button>
+                <button
+                  onClick={() => { setPendingOrder(null); send("Actually, let me make some changes to my order."); }}
+                  className="px-4 py-2 rounded-lg border border-white/20 text-gray-300 text-sm hover:border-white/40 transition-colors"
+                >
+                  Make Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Invoice result card */}
+        {invoice && (
+          <div className="flex justify-start">
+            <div className="ml-11 bg-[#C8D400]/10 border border-[#C8D400]/30 rounded-xl p-4 space-y-3 max-w-xs">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-[#C8D400]" />
+                <span className="text-white font-semibold text-sm">Invoice #{invoice.invoiceNumber}</span>
+              </div>
+              <p className="text-gray-300 text-sm">Total: <span className="text-white font-bold">${invoice.total.toFixed(2)}</span></p>
+              <a
+                href={invoice.paymentLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 bg-[#C8D400] text-black text-sm font-bold px-4 py-2 rounded-lg hover:bg-[#b0bb00] transition-colors w-full justify-center"
+              >
+                <ExternalLink className="w-4 h-4" /> Pay Invoice
+              </a>
+            </div>
+          </div>
+        )}
+
+        {(loading || invoicing) && (
           <div className="flex justify-start">
             <div className="w-8 h-8 rounded-full bg-[#C8D400]/20 border border-[#C8D400]/40 flex items-center justify-center flex-shrink-0 mr-3 mt-0.5">
               <MessageSquare className="w-4 h-4 text-[#C8D400]" />
@@ -126,11 +239,11 @@ export default function ChatPage() {
       {messages.length === 1 && (
         <div className="px-4 pb-3 flex flex-wrap gap-2 justify-center">
           {[
-            "How much rebar do I need for a 20x20 slab?",
-            "What sizes of rebar do you carry?",
-            "How do I place an order?",
-            "What's the difference between #3 and #4 rebar?",
-          ].map((prompt) => (
+            "I want to place an order",
+            "How much rebar for a 20x20 slab?",
+            "What sizes do you carry?",
+            "How do I get an estimate?",
+          ].map(prompt => (
             <button
               key={prompt}
               onClick={() => { setInput(prompt); setTimeout(() => textareaRef.current?.focus(), 50); }}
@@ -147,17 +260,18 @@ export default function ChatPage() {
         <div className="flex gap-2 items-end">
           <Textarea
             ref={textareaRef}
-            placeholder="Ask about rebar sizes, quantities, pricing..."
+            placeholder={pendingOrder ? "Type yes to confirm or describe any changes..." : "Ask about rebar, place an order..."}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={e => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             rows={1}
+            disabled={invoicing}
             className="resize-none text-sm bg-white/5 border-white/20 text-white placeholder:text-gray-500 focus:border-[#C8D400]/50 rounded-xl flex-1"
             style={{ minHeight: "42px", maxHeight: "120px" }}
           />
           <Button
-            onClick={send}
-            disabled={!input.trim() || loading}
+            onClick={() => send()}
+            disabled={!input.trim() || loading || invoicing}
             size="sm"
             className="bg-[#C8D400] hover:bg-[#b0bb00] text-black font-semibold h-[42px] px-4 rounded-xl flex-shrink-0"
           >
@@ -165,10 +279,8 @@ export default function ChatPage() {
           </Button>
         </div>
         <p className="text-xs text-gray-600 mt-1.5 text-center">
-          Enter to send · Shift+Enter for new line · To place an order:{" "}
-          <a href="sms:+18178800900" className="text-[#C8D400]/70 hover:text-[#C8D400]">
-            text (817) 880-0900
-          </a>
+          Enter to send · Shift+Enter for new line · Questions?{" "}
+          <a href="tel:4696317730" className="text-[#C8D400]/70 hover:text-[#C8D400]">469-631-7730</a>
         </p>
       </div>
     </div>

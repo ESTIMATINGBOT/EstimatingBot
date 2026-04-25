@@ -564,65 +564,105 @@ export async function registerRoutes(httpServer: Server, app: Express) {
       return res.status(400).json({ error: "messages array required" });
     }
 
-    const openaiKey = process.env.OPENAI_API_KEY;
-    if (!openaiKey) return res.status(500).json({ error: "OpenAI not configured" });
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) return res.status(500).json({ error: "AI not configured" });
 
-    const systemPrompt = `You are the RCP TextBot, an AI assistant for Rebar Concrete Products — a rebar and concrete supply company based in McKinney, TX.
+    // Fetch live QBO pricing to inject into system prompt
+    let priceList = "";
+    try {
+      const priceRes = await fetch("https://rcp-sms-bot-production.up.railway.app/api/qbo/items");
+      if (priceRes.ok) {
+        const priceData = await priceRes.json() as any[];
+        const lines = priceData
+          .filter((p: any) => p.unitPrice > 0 && p.active)
+          .slice(0, 40)
+          .map((p: any) => `  - ${p.name}: $${p.unitPrice.toFixed(5)}/unit (QBO ID: ${p.id})`)
+          .join("\n");
+        priceList = `\n\nLIVE QBO PRICING (use exact prices below, do not guess):\n${lines}`;
+      }
+    } catch {}
+
+    const systemPrompt = `You are the RCP Assistant, an AI for Rebar Concrete Products — a rebar and concrete supply company based in McKinney, TX.
 
 Your job is to help customers with:
 1. Rebar material questions (sizes, lengths, pricing inquiries)
-2. Placing rebar orders (walk them through size, quantity, length, delivery vs pickup)
-3. Estimating questions (explain that they can upload plans using the Estimate tab on this page for an automated AI takeoff)
+2. Placing orders with a QuickBooks invoice delivered by email and in-chat
+3. Estimating questions (explain they can upload plans using the Estimate tab on this page)
 4. General concrete/construction supply questions
 
 Company info:
-- Name: Rebar Concrete Products
-- Address: 2112 N Custer Rd, McKinney, TX 75071
-- Phone: 469-631-7730
-- Email: Office@RebarConcreteProducts.com
-- Hours: Monday–Friday, 6:00 AM – 3:00 PM CST
-- SMS ordering: Text (817) 880-0900 to place orders via text
+- Name: Rebar Concrete Products | Address: 2112 N Custer Rd, McKinney, TX 75071
+- Phone: 469-631-7730 | Email: Office@RebarConcreteProducts.com
+- Hours: Monday–Friday 6:00 AM–3:00 PM CST
 
-Products we carry:
-- Straight rebar: #3 through #11 in 20-foot lengths (default)
-- 40-foot rebar: available in #7+ only, full bundles only
-- Concrete accessories: dobie bricks (concrete chairs), tie wire, bar ties, metal stakes, plastic stakes, poly sheeting, lumber
+Products:
+- Straight rebar #3–#11 in 20' lengths (default — NEVER ask for length, always assume 20')
+- 40' rebar: #7+ only, full bundles only
+- Accessories: dobie bricks, tie wire, bar ties (4", 4.5", 5", 6", 6.5"), metal stakes (18", 24", 36"), plastic stakes, poly sheeting, lumber
 - Ready-mix concrete: 3000–4500 PSI
 
 Bundle quantities (20' bar): #3=266, #4=150, #5=96, #6=68, #7=50, #8=38, #9=30, #10=24, #11=18
+Tax rate: 8.25% (McKinney TX)${priceList}
 
-Tax rate: 8.25% (McKinney/Collin County TX)
+ORDER FLOW — follow this exactly when a customer wants to place an order:
+1. Collect: bar size, quantity, pickup vs delivery (if delivery: get address)
+2. Collect: customer full name, email address, phone number, company name (optional)
+3. Look up the exact unit price from the LIVE QBO PRICING list above. NEVER guess a price.
+4. Calculate: subtotal = qty × unitPrice. Tax = subtotal × 0.0825. Total = subtotal + tax.
+5. Present a clear order summary with line items, subtotal, tax, and total.
+6. Ask: "Does everything look correct? I'll create your QuickBooks invoice and email it to you."
+7. When the customer confirms, respond with a summary message AND append this exact block at the end:
 
-IMPORTANT RULES:
-- You cannot process payments or create invoices on the website — for full order processing and invoicing, direct customers to text (817) 880-0900
-- For plan uploads and automated estimates, direct customers to use the Estimate tab on this page
-- Be friendly, concise, and helpful
-- If a customer wants to place an order, collect: bar size, quantity, length (default 20'), delivery address or pickup, and their name/phone
-- Then tell them to text that info to (817) 880-0900 to complete the order with invoicing
-- Never make up prices — tell customers to call 469-631-7730 or text (817) 880-0900 for current pricing`;
+\`\`\`order
+{
+  "customerName": "<name>",
+  "customerEmail": "<email>",
+  "customerPhone": "<phone>",
+  "customerCompany": "<company or empty string>",
+  "deliveryAddress": "<address or empty string>",
+  "items": [
+    {
+      "name": "<QBO product name>",
+      "qboItemId": "<QBO ID from price list>",
+      "qty": <number>,
+      "unitPrice": <exact price from list>,
+      "description": "<optional description>"
+    }
+  ],
+  "readyToInvoice": true
+}
+\`\`\`
+
+RULES:
+- ALWAYS use exact prices from the LIVE QBO PRICING list — never estimate or make up prices
+- If a product isn't in the price list, say "call 469-631-7730 for pricing on that item"
+- Default to 20' rebar — never ask the customer what length
+- Be friendly and concise
+- For plan uploads, direct to the Estimate tab`;
 
     try {
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${openaiKey}`,
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
-          messages: [{ role: "system", content: systemPrompt }, ...messages],
+          model: "claude-haiku-4-5",
           max_tokens: 500,
-          temperature: 0.7,
+          system: systemPrompt,
+          messages,
         }),
       });
 
       if (!response.ok) {
         const err = await response.text();
-        return res.status(500).json({ error: `OpenAI error: ${err}` });
+        return res.status(500).json({ error: `AI error: ${err}` });
       }
 
       const data = await response.json() as any;
-      const reply = data.choices?.[0]?.message?.content || "Sorry, I couldn't generate a response. Please call us at 469-631-7730.";
+      const reply = data.content?.[0]?.text || "Sorry, I couldn't generate a response. Please call us at 469-631-7730.";
       res.json({ reply });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
