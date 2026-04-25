@@ -339,17 +339,17 @@ export default function HomePage() {
           {true && (
           <Card className="border-white/10 shadow-lg bg-[#0f0f0f]">
             <CardContent className="p-6 sm:p-8">
-              <h2 className="text-xl font-bold mb-1" style={{ fontFamily: "'Cabinet Grotesk', sans-serif" }}>
+              <h2 className="text-xl font-bold mb-1 text-white" style={{ fontFamily: "'Cabinet Grotesk', sans-serif" }}>
                 Request Your Estimate
               </h2>
-              <p className="text-muted-foreground text-sm mb-6">
+              <p className="text-gray-400 text-sm mb-6">
                 Enter your contact info and upload your plan PDF. We'll send a preliminary estimate to your email address.
               </p>
 
               <form onSubmit={handleSubmit} className="space-y-5" noValidate>
                 {/* Name */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="customerName" className="flex items-center gap-1.5 text-sm font-medium">
+                  <Label htmlFor="customerName" className="flex items-center gap-1.5 text-sm font-medium text-gray-300">
                     <User className="w-3.5 h-3.5 text-muted-foreground" />
                     Full Name <span className="text-destructive">*</span>
                   </Label>
@@ -358,9 +358,9 @@ export default function HomePage() {
                     data-testid="input-name"
                     type="text"
                     placeholder="John Smith"
+                    className={`bg-[#1a1a1a] border-white/10 text-white placeholder:text-gray-600 ${errors.customerName ? "border-destructive" : ""}`}
                     value={form.customerName}
                     onChange={change("customerName")}
-                    className={errors.customerName ? "border-destructive" : ""}
                   />
                   {errors.customerName && (
                     <p className="text-destructive text-xs">{errors.customerName}</p>
@@ -369,7 +369,7 @@ export default function HomePage() {
 
                 {/* Email */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="customerEmail" className="flex items-center gap-1.5 text-sm font-medium">
+                  <Label htmlFor="customerEmail" className="flex items-center gap-1.5 text-sm font-medium text-gray-300">
                     <Mail className="w-3.5 h-3.5 text-muted-foreground" />
                     Email Address <span className="text-destructive">*</span>
                   </Label>
@@ -378,9 +378,9 @@ export default function HomePage() {
                     data-testid="input-email"
                     type="email"
                     placeholder="you@example.com"
+                    className={`bg-[#1a1a1a] border-white/10 text-white placeholder:text-gray-600 ${errors.customerEmail ? "border-destructive" : ""}`}
                     value={form.customerEmail}
                     onChange={change("customerEmail")}
-                    className={errors.customerEmail ? "border-destructive" : ""}
                   />
                   {errors.customerEmail && (
                     <p className="text-destructive text-xs">{errors.customerEmail}</p>
@@ -389,7 +389,7 @@ export default function HomePage() {
 
                 {/* Phone */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="customerPhone" className="flex items-center gap-1.5 text-sm font-medium">
+                  <Label htmlFor="customerPhone" className="flex items-center gap-1.5 text-sm font-medium text-gray-300">
                     <Phone className="w-3.5 h-3.5 text-muted-foreground" />
                     Phone Number <span className="text-destructive">*</span>
                   </Label>
@@ -398,9 +398,9 @@ export default function HomePage() {
                     data-testid="input-phone"
                     type="tel"
                     placeholder="(555) 555-5555"
+                    className={`bg-[#1a1a1a] border-white/10 text-white placeholder:text-gray-600 ${errors.customerPhone ? "border-destructive" : ""}`}
                     value={form.customerPhone}
                     onChange={change("customerPhone")}
-                    className={errors.customerPhone ? "border-destructive" : ""}
                   />
                   {errors.customerPhone && (
                     <p className="text-destructive text-xs">{errors.customerPhone}</p>
@@ -409,7 +409,7 @@ export default function HomePage() {
 
                 {/* Project name (optional) */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="projectName" className="flex items-center gap-1.5 text-sm font-medium">
+                  <Label htmlFor="projectName" className="flex items-center gap-1.5 text-sm font-medium text-gray-300">
                     <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
                     Project Name <span className="text-muted-foreground text-xs font-normal">(optional)</span>
                   </Label>
@@ -418,6 +418,7 @@ export default function HomePage() {
                     data-testid="input-project-name"
                     type="text"
                     placeholder="e.g. 123 Oak Street Residence"
+                    className="bg-[#1a1a1a] border-white/10 text-white placeholder:text-gray-600"
                     value={form.projectName}
                     onChange={change("projectName")}
                   />
@@ -425,7 +426,7 @@ export default function HomePage() {
 
                 {/* Plan input — toggle between upload and link */}
                 <div className="space-y-2">
-                  <Label className="flex items-center gap-1.5 text-sm font-medium">
+                  <Label className="flex items-center gap-1.5 text-sm font-medium text-gray-300">
                     <FileText className="w-3.5 h-3.5 text-muted-foreground" />
                     Plan <span className="text-destructive">*</span>
                   </Label>
@@ -438,8 +439,8 @@ export default function HomePage() {
                       onClick={() => { setInputMode("upload"); setErrors(prev => ({ ...prev, file: "" })); }}
                       className={`flex-1 flex items-center justify-center gap-1.5 py-2 transition-colors ${
                         inputMode === "upload"
-                          ? "bg-black text-white"
-                          : "bg-muted/40 text-muted-foreground hover:text-foreground"
+                          ? "bg-[#C8D400] text-black"
+                          : "bg-[#1a1a1a] text-gray-400 hover:text-white"
                       }`}
                     >
                       <Upload className="w-3.5 h-3.5" /> Upload PDF
@@ -450,8 +451,8 @@ export default function HomePage() {
                       onClick={() => { setInputMode("link"); setErrors(prev => ({ ...prev, file: "" })); }}
                       className={`flex-1 flex items-center justify-center gap-1.5 py-2 transition-colors ${
                         inputMode === "link"
-                          ? "bg-black text-white"
-                          : "bg-muted/40 text-muted-foreground hover:text-foreground"
+                          ? "bg-[#C8D400] text-black"
+                          : "bg-[#1a1a1a] text-gray-400 hover:text-white"
                       }`}
                     >
                       <Link className="w-3.5 h-3.5" /> Paste Link
@@ -491,9 +492,9 @@ export default function HomePage() {
                         </div>
                       ) : (
                         <div className="flex flex-col items-center gap-2">
-                          <Upload className="w-8 h-8 text-muted-foreground" />
-                          <p className="font-medium text-sm">Drop PDF here or click to browse</p>
-                          <p className="text-muted-foreground text-xs">PDF up to 200 MB</p>
+                          <Upload className="w-8 h-8 text-gray-500" />
+                          <p className="font-medium text-sm text-white">Drop PDF here or click to browse</p>
+                          <p className="text-gray-500 text-xs">PDF up to 200 MB</p>
                         </div>
                       )}
                     </div>
@@ -508,10 +509,10 @@ export default function HomePage() {
                         placeholder="https://drive.google.com/file/d/... or https://dropbox.com/s/..."
                         value={planUrl}
                         onChange={(e) => { setPlanUrl(e.target.value); setErrors(prev => ({ ...prev, file: "" })); }}
-                        className={errors.file ? "border-destructive" : ""}
+                        className={`bg-[#1a1a1a] border-white/10 text-white placeholder:text-gray-600 ${errors.file ? "border-destructive" : ""}`}
                       />
-                      <div className="bg-muted/50 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
-                        <p className="font-medium text-foreground">Sharing tips:</p>
+                      <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-xs text-gray-400 space-y-1">
+                        <p className="font-medium text-gray-200">Sharing tips:</p>
                         <p><span className="font-medium">Google Drive:</span> Set to "Anyone with the link can view"</p>
                         <p><span className="font-medium">Dropbox:</span> Change <code>?dl=0</code> to <code>?dl=1</code> at the end of the URL</p>
                       </div>
