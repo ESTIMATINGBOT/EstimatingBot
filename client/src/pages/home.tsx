@@ -167,9 +167,9 @@ export default function HomePage() {
 
       <header className="bg-black text-white">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 flex items-center justify-between py-0">
-          <div className="h-[64px] flex items-center gap-3">
+          <div className="h-[96px] flex items-center gap-3">
             {/* Best of 2026 seal */}
-            <svg width="52" height="52" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg" className="flex-shrink-0">
+            <svg width="88" height="88" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg" className="flex-shrink-0">
               <polygon points="21,4 51,4 68,21 68,51 51,68 21,68 4,51 4,21" fill="#111" stroke="url(#goldGradH)" strokeWidth="2" />
               <polygon points="22,8 50,8 64,22 64,50 50,64 22,64 8,50 8,22" fill="none" stroke="url(#goldGradH)" strokeWidth="0.75" opacity="0.4" />
               <text x="36" y="18" textAnchor="middle" fontSize="7" fill="#F5C518" letterSpacing="2">★★★★★</text>
