@@ -15,6 +15,11 @@ import ChatPage from "./chat";
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<"estimate" | "chat">("chat");
+
+  const switchTab = (tab: "estimate" | "chat") => {
+    setActiveTab(tab);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
   const [, navigate] = useLocation();
 
   // Rotating hero headlines
@@ -215,7 +220,7 @@ export default function HomePage() {
           {/* Tab toggle — hero placement */}
           <div className="flex rounded-xl border border-white/10 bg-white/5 p-1 max-w-sm mx-auto">
             <button
-              onClick={() => setActiveTab("estimate")}
+              onClick={() => switchTab("estimate")}
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
                 activeTab === "estimate"
                   ? "bg-[#C8D400] text-black shadow"
@@ -226,7 +231,7 @@ export default function HomePage() {
               Instant Takeoff
             </button>
             <button
-              onClick={() => setActiveTab("chat")}
+              onClick={() => switchTab("chat")}
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
                 activeTab === "chat"
                   ? "bg-[#C8D400] text-black shadow"
