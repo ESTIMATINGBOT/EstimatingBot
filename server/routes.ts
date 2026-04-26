@@ -827,6 +827,40 @@ Always recommend consulting a structural engineer for project-specific structura
 IMAGE ADVICE: Customers can send photos of their rebar, plans, concrete pours, or job site. When you receive an image, analyze it and give specific, practical advice. Identify bar sizes if visible, spacing, layout issues, cover concerns, or any problems you spot. If it looks like a plan sheet, identify bar marks, sizes, and spacing. Always tie advice back to what products RCP can supply.`;
 
 
+    // ── Auto-inject delivery fee if the conversation mentions an address ──
+    let messagesWithDelivery = [...messages];
+    try {
+      const SMS_BOT_URL = "https://rcp-sms-bot-production.up.railway.app";
+      // Check if any assistant message says "calculating" and last user msg looks like an address
+      const lastUser = [...messages].reverse().find(m => m.role === "user");
+      const hasCalcPending = messages.some(m => m.role === "assistant" && m.content.toLowerCase().includes("calculating"));
+      const hasDeliveryNote = messages.some(m => m.role === "user" && m.content.startsWith("[SYSTEM]"));
+      if (lastUser && !hasDeliveryNote) {
+        // Look for address-like content in user messages (street number + city pattern)
+        const allUserText = messages.filter(m => m.role === "user").map(m => m.content).join(" ");
+        const addressMatch = allUserText.match(/\d+\s+[\w\s]+(?:ave|blvd|st|rd|dr|fwy|hwy|ln|way|pkwy|ct|pl)[\w\s,]*(?:tx|texas|ok|oklahoma|ar|arkansas|nm|new mexico|co|colorado|la|louisiana|ks|kansas)[\s,]*\d{5}/i);
+        if (addressMatch) {
+          const address = addressMatch[0].trim();
+          // Only inject if we haven't already injected for this address
+          const alreadyInjected = messages.some(m => m.content.includes("[SYSTEM] Delivery distance"));
+          if (!alreadyInjected) {
+            const distRes = await fetch(`${SMS_BOT_URL}/api/calc-delivery?address=${encodeURIComponent(address)}`, { signal: AbortSignal.timeout(8000) });
+            if (distRes.ok) {
+              const distData = await distRes.json() as any;
+              if (distData.miles && distData.fee !== undefined) {
+                const feeNote = distData.fee === 0
+                  ? `[SYSTEM] Delivery distance: ${distData.miles} miles. Delivery fee: FREE (order qualifies for free delivery tier).`
+                  : `[SYSTEM] Delivery distance: ${distData.miles} miles. Delivery fee: $${distData.fee.toFixed(2)} ($3.00/mile × ${distData.miles} miles).`;
+                messagesWithDelivery = [...messages, { role: "user" as const, content: feeNote }];
+              }
+            }
+          }
+        }
+      }
+    } catch (deliveryErr) {
+      // Delivery lookup failed — continue without it
+    }
+
     try {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -841,8 +875,8 @@ IMAGE ADVICE: Customers can send photos of their rebar, plans, concrete pours, o
           system: systemPrompt,
           messages: (() => {
             // If image attached, replace last user message content with a vision block
-            if (!imageBase64 || !imageMediaType) return messages;
-            const msgs = [...messages];
+            if (!imageBase64 || !imageMediaType) return messagesWithDelivery;
+            const msgs = [...messagesWithDelivery];
             const lastUserIdx = msgs.map(m => m.role).lastIndexOf("user");
             if (lastUserIdx === -1) return msgs;
             const lastMsg = msgs[lastUserIdx];
