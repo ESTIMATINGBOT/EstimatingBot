@@ -64,6 +64,26 @@ export default function ChatPage() {
     }
   }, [messages, loading, invoice]);
 
+  // Ref so the postMessage handler can call send() without stale closure
+  const sendRef = useRef<((text?: string) => Promise<void>) | null>(null);
+  useEffect(() => { sendRef.current = send; });
+
+  // Listen for prompt injected via postMessage from parent Shopify page (chip clicks)
+  useEffect(() => {
+    function handleMessage(e: MessageEvent) {
+      if (e.data && e.data.type === 'rcp-prompt' && typeof e.data.text === 'string' && e.data.text.trim()) {
+        const text = e.data.text.trim();
+        if (sendRef.current) {
+          sendRef.current(text);
+        } else {
+          setInput(text);
+        }
+      }
+    }
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
   const addMessage = (msg: Message) => setMessages(prev => [...prev, msg]);
 
   const createInvoice = async (order: OrderData) => {
