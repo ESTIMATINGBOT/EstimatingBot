@@ -833,7 +833,9 @@ CONCRETE MIX: 2500 psi=light residential; 3000 psi=standard residential/commerci
 
 Always recommend consulting a structural engineer for project-specific structural decisions.
 
-IMAGE ADVICE: Customers can send photos of their rebar, plans, concrete pours, or job site. When you receive an image, analyze it and give specific, practical advice. Identify bar sizes if visible, spacing, layout issues, cover concerns, or any problems you spot. If it looks like a plan sheet, identify bar marks, sizes, and spacing. Always tie advice back to what products RCP can supply.`;
+IMAGE ADVICE: Customers can send photos of their rebar, job site, or concrete pours. When you receive an image, analyze it and give specific, practical advice — identify bar sizes if visible, spacing, layout issues, cover concerns, or any problems you spot. Always tie advice back to what products RCP can supply.
+
+If a customer sends a plan sheet or asks about reading plans, DO NOT promise a full takeoff from the image. Instead say: "For a full plan takeoff, use our Instant Takeoff tool at ai.rebarconcreteproducts.com — upload your plans and we'll generate a detailed preliminary estimate. I can help with specific questions about what you see on the plans, or quote individual items if you tell me the bar sizes and quantities."`;
 
 
     // ── Auto-inject delivery fee if the conversation mentions an address ──
