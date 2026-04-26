@@ -54,13 +54,17 @@ export default function ChatPage() {
   const [pendingOrder, setPendingOrder] = useState<OrderData | null>(null);
   const [pendingImage, setPendingImage] = useState<{ base64: string; mediaType: string; dataUrl: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const msgsContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     // Only auto-scroll after the first message — don't hijack page scroll on mount
     if (messages.length > 1 || loading || invoice) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      // Scroll within the messages container only — avoid scrolling parent page
+      if (msgsContainerRef.current) {
+        msgsContainerRef.current.scrollTop = msgsContainerRef.current.scrollHeight;
+      }
     }
   }, [messages, loading, invoice]);
 
@@ -312,7 +316,7 @@ export default function ChatPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+      <div ref={msgsContainerRef} className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
         {messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             {msg.role === "assistant" && (
