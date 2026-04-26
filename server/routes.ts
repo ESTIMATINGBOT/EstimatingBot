@@ -649,7 +649,8 @@ CLARIFICATION RULES (CRITICAL)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STRAIGHT REBAR RULES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Length ALWAYS defaults to 20'. NEVER ask the customer for a length. NEVER mention 40' unless the customer explicitly says "40'" or "40 foot" themselves.
+- Length ALWAYS defaults to 20'. NEVER ask the customer about length. NEVER offer, mention, or suggest 40' as an option under any circumstances. 40' does not exist unless the customer explicitly says "40'" or "40 foot" first.
+- When a customer asks for rebar, IMMEDIATELY assume 20' and quote it — do not ask any clarifying question about length.
 - "3 bundles of #6" → immediately price as 20' #6, no question asked
 - "2 bundles of #4" → 20' #4, quote immediately
 - Bundle quantities (20' bar): #3=266, #4=150, #5=96, #6=68, #7=50, #8=38, #9=30, #10=24, #11=18
