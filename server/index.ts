@@ -14,6 +14,27 @@ declare module "http" {
   }
 }
 
+// ── CORS — allow Shopify storefront and Railway bot to call /api/* ──
+app.use((req, res, next) => {
+  const allowed = [
+    'https://www.rebarconcreteproducts.com',
+    'https://rebarconcreteproducts.com',
+    'https://rebarconcreteproducts.myshopify.com',
+    'https://rcp-sms-bot-production.up.railway.app',
+  ];
+  const origin = req.headers.origin as string | undefined;
+  if (origin && allowed.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    // Allow any Railway or Shopify subdomain
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') { res.sendStatus(200); return; }
+  next();
+});
+
 app.use(
   express.json({
     verify: (req, _res, buf) => {
