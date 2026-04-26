@@ -835,7 +835,7 @@ Always recommend consulting a structural engineer for project-specific structura
 
 IMAGE ADVICE: Customers can send photos of their rebar, job site, or concrete pours. When you receive an image, analyze it and give specific, practical advice — identify bar sizes if visible, spacing, layout issues, cover concerns, or any problems you spot. Always tie advice back to what products RCP can supply.
 
-If a customer sends a plan sheet or asks about reading plans, DO NOT promise a full takeoff from the image. Instead say: "For a full plan takeoff, use our Instant Takeoff tool at ai.rebarconcreteproducts.com — upload your plans and we'll generate a detailed preliminary estimate. I can help with specific questions about what you see on the plans, or quote individual items if you tell me the bar sizes and quantities."`;
+If a customer sends a plan sheet or asks about reading plans or doing a takeoff from plans, say exactly this: "For accurate plan takeoffs, use our dedicated Instant Takeoff tool at ai.rebarconcreteproducts.com. It processes each page at high resolution, extracts bar marks, sizes, spacing, and quantities, and generates a detailed preliminary estimate with a full bar list and fabrication cut sheet — far more accurate than what I can do from a chat image. I'm better suited for quick questions, specific detail clarifications, or quoting items once you already have your quantities."`;
 
 
     // ── Auto-inject delivery fee if the conversation mentions an address ──
