@@ -582,10 +582,10 @@ export default function HomePage() {
               { icon: FileText, label: "Instant Takeoff", desc: "AI reads your plans and builds a full rebar estimate" },
               { icon: Clock, label: "Fast & Accurate", desc: "Quotes in seconds, estimates in minutes" },
             ].map(({ icon: Icon, label, desc }) => (
-              <div key={label} className="flex flex-col items-center gap-1.5 p-4 rounded-xl bg-muted/40">
-                <Icon className="w-5 h-5 text-[#5a6200]" />
-                <p className="font-semibold text-sm">{label}</p>
-                <p className="text-muted-foreground text-xs">{desc}</p>
+              <div key={label} className="flex flex-col items-center gap-1.5 p-4 rounded-xl bg-white/5 border border-white/10">
+                <Icon className="w-5 h-5 text-[#C8D400]" />
+                <p className="font-semibold text-sm text-white">{label}</p>
+                <p className="text-gray-400 text-xs">{desc}</p>
               </div>
             ))}
           </div>
