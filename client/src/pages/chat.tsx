@@ -442,7 +442,7 @@ export default function ChatPage() {
           </button>
           <Textarea
             ref={textareaRef}
-            placeholder="Ask about rebar, place an order..."
+            placeholder="Ask about pricing or place an order..."
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={onKeyDown}
@@ -461,7 +461,8 @@ export default function ChatPage() {
           </Button>
         </div>
         <p className="text-xs text-gray-600 mt-1.5 text-center">
-          Enter to send · Shift+Enter for new line · Questions?{" "}
+          <span className="hidden sm:inline">Enter to send · Shift+Enter for new line · </span>
+          Questions?{" "}
           <a href="tel:4696317730" className="text-[#C8D400]/70 hover:text-[#C8D400]">469-631-7730</a>
         </p>
       </div>
