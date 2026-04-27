@@ -594,20 +594,22 @@ export default function HomePage() {
       )}
 
       {/* Footer */}
-      <footer className="bg-black text-gray-400 py-6 px-4">
-        <div className="h-[3px] bg-[#C8D400] mb-6" />
-        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="text-[#C8D400] font-bold text-sm">REBAR</span>
-            <span className="text-gray-400 font-medium text-xs">CONCRETE PRODUCTS</span>
-            <span className="text-gray-600 text-xs ml-1">— 2112 N Custer Rd, McKinney, TX 75071</span>
+      <footer className="bg-black text-gray-400 py-8 px-6">
+        <div className="h-[3px] bg-[#C8D400] mb-8" />
+        <div className="max-w-5xl mx-auto flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 text-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[#C8D400] font-bold text-base">REBAR</span>
+              <span className="text-gray-300 font-medium">CONCRETE PRODUCTS</span>
+            </div>
+            <span className="text-gray-600 sm:ml-1">2112 N Custer Rd, McKinney, TX 75071</span>
           </div>
-          <div className="flex flex-col sm:flex-row gap-3 items-center">
-            <a href="tel:4696317730" className="hover:text-[#C8D400] transition-colors">469-631-7730</a>
+          <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 items-start sm:items-center">
+            <a href="tel:4696317730" className="hover:text-[#C8D400] transition-colors whitespace-nowrap">469-631-7730</a>
             <a href="mailto:Office@RebarConcreteProducts.com" className="hover:text-[#C8D400] transition-colors">
               Office@RebarConcreteProducts.com
             </a>
-            <span className="text-gray-600">Mon–Fri 6am–3pm CST</span>
+            <span className="text-gray-500 whitespace-nowrap">Mon–Fri 6am–3pm CST</span>
           </div>
         </div>
       </footer>
