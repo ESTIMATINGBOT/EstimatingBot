@@ -754,7 +754,10 @@ def normalize_bar_key(bar):
     """Generate a deduplication key for a bar entry."""
     mark = str(bar.get("mark", "")).strip().upper()
     size = str(bar.get("size", "")).strip()
-    length = round(float(bar.get("length_ft", 0)), 1)
+    try:
+        length = round(float(bar.get("length_ft") or 0), 1)
+    except (TypeError, ValueError):
+        length = 0.0
     desc = str(bar.get("description", "")).strip().lower()[:40]
     is_fab = bool(bar.get("is_fabricated", False))
     return (mark, size, length, is_fab, desc)
@@ -764,6 +767,8 @@ def merge_takeoffs(results):
     """Merge multiple Claude takeoff results with smart deduplication."""
     if not results:
         return None
+    # Filter out any None entries that may have slipped in
+    results = [r for r in results if r is not None]
 
     merged = {
         "project_name": "",
@@ -1678,7 +1683,13 @@ def claude_takeoff_all_pages(pdf_path, tmpdir, dpi=75, batch_size=10):
             all_results = [holistic] + all_results
         # If holistic didn't improve, keep batch results
 
-    merged = merge_takeoffs(all_results)
+    try:
+        merged = merge_takeoffs(all_results)
+    except Exception as merge_err:
+        import traceback as _tb
+        return None, f"merge_takeoffs failed: {merge_err}\n{_tb.format_exc()}"
+    if not merged:
+        return None, "merge_takeoffs returned empty result"
     meta_prefix = " ".join(filter(None, [render_note, f"[Units: {unit_count}]"]))
     merged["notes"] = (meta_prefix + " " + merged.get("notes", "")).strip()
     return merged, None
