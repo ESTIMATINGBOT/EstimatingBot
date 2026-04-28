@@ -260,13 +260,23 @@ export async function registerRoutes(httpServer: Server, app: Express) {
       if (uploadedFiles.length > 1) {
         const mergedPath = path.join(os.tmpdir(), `rcp_merged_${bid.id}_${Date.now()}.pdf`);
         const filePaths = uploadedFiles.map(f => f.path);
+        // Build a safe multi-line Python script to merge PDFs via pypdf
+        const mergeScript = [
+          "import pypdf",
+          "w = pypdf.PdfWriter()",
+          ...filePaths.map(p => `w.append(${JSON.stringify(p)})`),
+          `f = open(${JSON.stringify(mergedPath)}, 'wb')`,
+          "w.write(f)",
+          "f.close()",
+        ].join("\n");
         await new Promise<void>((resolve, reject) => {
-          const proc = require("child_process").spawn("python3", ["-c",
-            `import pypdf; w = pypdf.PdfWriter()\n` +
-            filePaths.map(p => `w.append(${JSON.stringify(p)})`).join("\n") +
-            `\nwith open(${JSON.stringify(mergedPath)}, 'wb') as fh: w.write(fh)`
-          ]);
-          proc.on("close", (code: number) => code === 0 ? resolve() : reject(new Error("PDF merge failed")));
+          const proc = require("child_process").spawn("python3", ["-c", mergeScript]);
+          let stderr = "";
+          proc.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
+          proc.on("close", (code: number) => {
+            if (code === 0) resolve();
+            else reject(new Error(`PDF merge failed (exit ${code}): ${stderr.trim()}`));
+          });
         });
         inputPdfPath = mergedPath;
         mergedTemp = true;
@@ -373,7 +383,21 @@ export async function registerRoutes(httpServer: Server, app: Express) {
       setTimeout(() => {
         try { fs.unlinkSync(result.pdfPath!); } catch {}
       }, 300_000); // 5 min window to download via /api/bids/:id/download
-    })();
+    })().catch(async (err: Error) => {
+      // Top-level safety net — catches any unhandled error in the background pipeline
+      // (merge failures, unexpected throws, etc.) so the bid never silently hangs
+      console.error("[bid background] unhandled error:", err);
+      storage.updateBidStatus(bid.id, "failed",
+        "An unexpected error occurred processing your plans. Our team has been notified and will follow up.");
+      try {
+        await ta().sendMail({
+          from: `"RCP Website Bot" <${process.env.GMAIL_USER}>`,
+          to: "Office@RebarConcreteProducts.com",
+          subject: `[Failed Web Bid] ${bid.customerName} — ${bid.projectName || "unnamed project"}`,
+          html: `<p>Unhandled error in bid pipeline for bid #${bid.id}.</p><pre>${err.message}\n${err.stack}</pre>`,
+        });
+      } catch {}
+    });
   });
 
   // ── EMAIL DIAGNOSTIC ────────────────────────────────────────────────────────
