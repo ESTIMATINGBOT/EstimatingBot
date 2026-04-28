@@ -1895,7 +1895,8 @@ def generate_bid_pdf(takeoff, prices, output_path, customer_name, project_name, 
         fab_sub = total_fab_lbs * prices["FAB"]
 
     material_sub = rebar_sub + fab_sub
-    combined     = material_sub + forming_sub
+    misc_5pct    = material_sub * 0.05
+    combined     = material_sub + forming_sub + misc_5pct
     tax          = combined * 0.0825
     grand_total  = combined + tax
 
@@ -2037,6 +2038,7 @@ def generate_bid_pdf(takeoff, prices, output_path, customer_name, project_name, 
 
     sub_data = [
         ['', 'Material Subtotal:', fmt(material_sub)],
+        ['', '+5% Contingency / Misc:', fmt(misc_5pct)],
         ['', 'Subtotal (before tax):', fmt(combined - forming_sub)],
     ]
     st = Table(sub_data, colWidths=[CONTENT_W-2.8*inch, 1.5*inch, 1.3*inch])
@@ -2107,6 +2109,7 @@ def generate_bid_pdf(takeoff, prices, output_path, customer_name, project_name, 
     grand_data = [
         ['Material Subtotal', fmt(material_sub)],
         ['Forming & Accessories', fmt(forming_sub)],
+        ['+5% Contingency / Misc', fmt(misc_5pct)],
         ['Pre-Tax Total', fmt(combined)],
         ['Sales Tax (8.25%)', fmt(tax)],
     ]
