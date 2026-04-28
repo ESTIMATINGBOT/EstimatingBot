@@ -218,22 +218,27 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   });
 
   // Submit plan for bid
-  app.post("/api/bids", upload.single("planFile"), async (req, res) => {
+  app.post("/api/bids", upload.array("planFile", 20), async (req, res) => {
     const { customerName, customerEmail, customerPhone, projectName, planUrl } = req.body;
+    const uploadedFiles = (req.files as Express.Multer.File[]) || [];
 
     if (!customerName || !customerEmail || !customerPhone) {
       return res.status(400).json({ error: "Name, email, and phone are required" });
     }
-    if (!req.file && !planUrl) {
+    if (uploadedFiles.length === 0 && !planUrl) {
       return res.status(400).json({ error: "A PDF plan file or link is required" });
     }
+
+    const fileLabel = uploadedFiles.length > 1
+      ? `${uploadedFiles.length} files (${uploadedFiles.map(f => f.originalname).join(", ")})`
+      : uploadedFiles[0]?.originalname || planUrl || "plan-link";
 
     const bid = storage.createBid({
       customerName,
       customerEmail,
       customerPhone,
       projectName: projectName || "",
-      originalFilename: req.file?.originalname || planUrl || "plan-link",
+      originalFilename: fileLabel,
       createdAt: new Date().toISOString(),
     });
 
@@ -249,10 +254,30 @@ export async function registerRoutes(httpServer: Server, app: Express) {
 
       storage.updateBidStatus(bid.id, "processing", "Running AI plan takeoff...");
 
+      // Merge multiple uploaded files into one PDF if needed
+      let inputPdfPath = "";
+      let mergedTemp = false;
+      if (uploadedFiles.length > 1) {
+        const mergedPath = path.join(os.tmpdir(), `rcp_merged_${bid.id}_${Date.now()}.pdf`);
+        const filePaths = uploadedFiles.map(f => f.path);
+        await new Promise<void>((resolve, reject) => {
+          const proc = require("child_process").spawn("python3", ["-c",
+            `import pypdf; w = pypdf.PdfWriter()\n` +
+            filePaths.map(p => `w.append(${JSON.stringify(p)})`).join("\n") +
+            `\nwith open(${JSON.stringify(mergedPath)}, 'wb') as fh: w.write(fh)`
+          ]);
+          proc.on("close", (code: number) => code === 0 ? resolve() : reject(new Error("PDF merge failed")));
+        });
+        inputPdfPath = mergedPath;
+        mergedTemp = true;
+        storage.updateBidStatus(bid.id, "processing", `Merged ${uploadedFiles.length} PDF files — running full takeoff...`);
+      } else if (uploadedFiles.length === 1) {
+        inputPdfPath = uploadedFiles[0].path;
+      }
+
       // If URL provided, download it first
-      let inputPdfPath = req.file?.path || "";
       let downloadedTemp = false;
-      if (planUrl && !req.file) {
+      if (planUrl && uploadedFiles.length === 0) {
         const tmpPdf = path.join(os.tmpdir(), `rcp_download_${bid.id}_${Date.now()}.pdf`);
         try {
           storage.updateBidStatus(bid.id, "processing", "Downloading plan from link...");
@@ -279,9 +304,9 @@ export async function registerRoutes(httpServer: Server, app: Express) {
         }
       );
 
-      // Clean up uploaded/downloaded file
-      try { if (req.file?.path) fs.unlinkSync(req.file.path); } catch {}
-      try { if (downloadedTemp && inputPdfPath) fs.unlinkSync(inputPdfPath); } catch {}
+      // Clean up uploaded/downloaded files
+      for (const f of uploadedFiles) { try { fs.unlinkSync(f.path); } catch {} }
+      try { if ((downloadedTemp || mergedTemp) && inputPdfPath) fs.unlinkSync(inputPdfPath); } catch {}
 
       if (!result.success || !result.pdfPath) {
         storage.updateBidStatus(bid.id, "failed",

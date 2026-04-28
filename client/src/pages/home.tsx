@@ -52,7 +52,7 @@ export default function HomePage() {
     customerPhone: "",
     projectName: "",
   });
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [planUrl, setPlanUrl] = useState("");
   const [inputMode, setInputMode] = useState<"upload" | "link">("upload");
   const [dragOver, setDragOver] = useState(false);
@@ -67,7 +67,7 @@ export default function HomePage() {
   // This ensures "Submit Another Plan" always starts completely fresh.
   useEffect(() => {
     setForm({ customerName: "", customerEmail: "", customerPhone: "", projectName: "" });
-    setFile(null);
+    setFiles([]);
     setPlanUrl("");
     setInputMode("upload");
     setErrors({});
@@ -76,25 +76,33 @@ export default function HomePage() {
     // Reset the file input element if it exists
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []); // runs once on mount — every navigation to "/" creates a fresh component instance
-
   // File handling
-  const handleFile = (f: File) => {
-    if (f.type !== "application/pdf") {
-      toast({ title: "PDF only", description: "Please upload a PDF plan file.", variant: "destructive" });
-      return;
+  const handleFiles = (incoming: File[]) => {
+    const valid: File[] = [];
+    for (const f of incoming) {
+      if (f.type !== "application/pdf") {
+        toast({ title: "PDF only", description: `${f.name} is not a PDF — skipped.`, variant: "destructive" });
+        continue;
+      }
+      if (f.size > 200 * 1024 * 1024) {
+        toast({ title: "File too large", description: `${f.name} exceeds 200 MB — skipped.`, variant: "destructive" });
+        continue;
+      }
+      valid.push(f);
     }
-    if (f.size > 200 * 1024 * 1024) {
-      toast({ title: "File too large", description: "Maximum file size is 200 MB.", variant: "destructive" });
-      return;
-    }
-    setFile(f);
+    if (valid.length > 0) setFiles(prev => [...prev, ...valid]);
+  };
+
+  const removeFile = (index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    const f = e.dataTransfer.files[0];
-    if (f) handleFile(f);
+    const dropped = Array.from(e.dataTransfer.files);
+    if (dropped.length) handleFiles(dropped);
   }, []);
 
   const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setDragOver(true); };
@@ -107,7 +115,7 @@ export default function HomePage() {
     if (!form.customerEmail.trim()) errs.customerEmail = "Email is required";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.customerEmail)) errs.customerEmail = "Valid email required";
     if (!form.customerPhone.trim()) errs.customerPhone = "Phone is required";
-    if (inputMode === "upload" && !file) errs.file = "Please upload your plan PDF";
+    if (inputMode === "upload" && files.length === 0) errs.file = "Please upload at least one plan PDF";
     if (inputMode === "link" && !planUrl.trim()) errs.file = "Please paste a Google Drive or Dropbox link";
     if (inputMode === "link" && planUrl.trim() && !/^https?:\/\//i.test(planUrl)) errs.file = "Please enter a valid URL starting with https://";
     setErrors(errs);
@@ -126,7 +134,7 @@ export default function HomePage() {
       if (inputMode === "link") {
         data.append("planUrl", planUrl.trim());
       } else {
-        data.append("planFile", file!);
+        files.forEach(f => data.append("planFile", f));
       }
 
       const base = "__PORT_5000__".startsWith("__") ? "https://estimatingbot-production.up.railway.app" : "__PORT_5000__";
@@ -490,28 +498,39 @@ export default function HomePage() {
                         ref={fileInputRef}
                         type="file"
                         accept="application/pdf"
+                        multiple
                         className="hidden"
                         data-testid="input-file"
                         onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) { handleFile(f); setErrors(prev => ({ ...prev, file: "" })); }
+                          const selected = Array.from(e.target.files || []);
+                          if (selected.length) { handleFiles(selected); setErrors(prev => ({ ...prev, file: "" })); }
                         }}
                       />
-                      {file ? (
-                        <div className="flex items-center justify-center gap-3">
-                          <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
-                          <div className="text-left">
-                            <p className="font-medium text-sm truncate max-w-xs">{file.name}</p>
-                            <p className="text-muted-foreground text-xs">
-                              {(file.size / 1024 / 1024).toFixed(2)} MB — click to change
-                            </p>
-                          </div>
+                      {files.length > 0 ? (
+                        <div className="w-full text-left space-y-2">
+                          {files.map((f, i) => (
+                            <div key={i} className="flex items-center justify-between gap-3 bg-[#1a1a1a] rounded px-3 py-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+                                <div className="min-w-0">
+                                  <p className="font-medium text-xs truncate text-white">{f.name}</p>
+                                  <p className="text-gray-500 text-xs">{(f.size / 1024 / 1024).toFixed(2)} MB</p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); removeFile(i); }}
+                                className="text-gray-500 hover:text-red-400 shrink-0 text-xs font-bold px-1"
+                              >✕</button>
+                            </div>
+                          ))}
+                          <p className="text-gray-500 text-xs text-center pt-1">Click to add more files</p>
                         </div>
                       ) : (
                         <div className="flex flex-col items-center gap-2">
                           <Upload className="w-8 h-8 text-gray-500" />
-                          <p className="font-medium text-sm text-white">Drop PDF here or click to browse</p>
-                          <p className="text-gray-500 text-xs">PDF up to 200 MB</p>
+                          <p className="font-medium text-sm text-white">Drop PDFs here or click to browse</p>
+                          <p className="text-gray-500 text-xs">Multiple files supported · PDF up to 200 MB each</p>
                         </div>
                       )}
                     </div>
