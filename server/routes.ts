@@ -860,8 +860,13 @@ WIRE MESH: must clarify gauge and size. 5'x150' 10 gauge ($285), W2.9xW2.9 ($58.
 
 BEAM BOLSTER: $0.99 each. Quote directly — no clarification needed unless qty missing.
 
-LUMBER: We sell exactly ONE SKU per size — always 16' length, fixed grade. NEVER ask about length or grade. Quote immediately.
-- 2x4x16' #3 SPF=$8.89, 2x6x16' #3 SPF=$10.45, 2x8x16'=$12.85, 2x10x16'=$15.00, 2x12x16'=$22.85, Plywood 3/4"=$34.52
+LUMBER: We sell exactly ONE SKU per size — always 16' length, fixed grade. NEVER ask about length — all lumber is 16' ONLY. NEVER ask about grade or any other variable. When a customer says "2x4", "2x6", "2x8", "2x10", or "2x12" — they ALWAYS mean 16'. Do NOT ask "what length?". Do NOT confirm "do you mean 2x4x16'?". Just treat it as 16' and quote or process immediately.
+- 2x4 (or 2x4x16') → $8.89/board
+- 2x6 (or 2x6x16') → $10.45/board
+- 2x8 (or 2x8x16') → $12.85/board
+- 2x10 (or 2x10x16') → $15.00/board
+- 2x12 (or 2x12x16') → $22.85/board
+- Plywood 3/4" 4x8 sheet → $34.52/sheet
 
 HEAVY REBAR #7–#11 (20') and #8/#9/#11 (40'): route to "call us at 469-631-7730 for current pricing"
 
