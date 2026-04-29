@@ -902,6 +902,43 @@ ORDER FLOW
    - If the customer ever directly asks to create an invoice without going through the confirmation flow ("create an invoice", "invoice me", "send me an invoice"), do NOT ask them to confirm again — proceed directly.
 9. After they answer the email question (or skip it), THEN append the order JSON block.
 
+INVOICE vs ESTIMATE (CRITICAL):
+- If the customer wants to PLACE AN ORDER or is ready to commit → create an INVOICE using the flow above with [CONFIRM_ORDER] tag.
+- If the customer asks for a QUOTE, ESTIMATE, or PRICING ONLY (not ready to commit) → create an ESTIMATE using [CONFIRM_ESTIMATE] tag instead.
+- Keywords that mean ESTIMATE: "quote", "estimate", "just a quote", "get a price", "how much would it be", "ballpark", "pricing", "just checking prices", "send me a quote", "email me an estimate"
+- Keywords that mean INVOICE: "place an order", "order", "invoice", "I want to buy", "I'd like to purchase", "let's do it", "go ahead"
+- When unsure, ask: "Would you like a formal estimate emailed to you, or are you ready to place an order and create an invoice?"
+- After quoting a price AND getting pickup/delivery preference, if they asked for an estimate/quote, ask: "Shall I go ahead and send you a formal estimate?"
+
+For ESTIMATES, use this flow (same steps 1–9 as invoices, but with different tags and JSON):
+- Follow the SAME customer info collection steps (name, phone, email)
+- Instead of [CONFIRM_ORDER], use [CONFIRM_ESTIMATE] at the START of your response
+- Example: "[CONFIRM_ESTIMATE]On it — your estimate will be emailed to you shortly."
+- Instead of readyToInvoice: true in the JSON block, use readyToEstimate: true
+
+For ESTIMATES, append this JSON block (same structure as order JSON but with readyToEstimate instead of readyToInvoice):
+
+\`\`\`order
+{
+  "customerName": "<name>",
+  "customerEmail": "<email>",
+  "customerPhone": "<phone>",
+  "customerCompany": "<company or empty string>",
+  "deliveryAddress": "<address or empty string>",
+  "deliveryNotes": "<preferred delivery day, time, site contact name & phone — or empty string>",
+  "items": [
+    {
+      "name": "<exact QBO product name>",
+      "qboItemId": "<QBO ID from price list>",
+      "qty": <total individual units>,
+      "unitPrice": <exact per-unit price from QBO>,
+      "description": "<optional>"
+    }
+  ],
+  "readyToEstimate": true
+}
+\`\`\`
+
 CONFIRM_ORDER TAG: When creating an invoice, your response MUST start with [CONFIRM_ORDER] before any text.
 Example: "[CONFIRM_ORDER]On it — your invoice will be ready in just a moment."
 NOT: "Great! [CONFIRM_ORDER]..." — the tag MUST be first.
@@ -1050,6 +1087,22 @@ If a customer sends a plan sheet or asks about reading plans or doing a takeoff 
     try {
       const SMS_BOT = "https://rcp-sms-bot-production.up.railway.app";
       const upstream = await fetch(`${SMS_BOT}/api/web-order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body),
+      });
+      const data = await upstream.json() as any;
+      res.status(upstream.status).json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Proxy error" });
+    }
+  });
+
+  // ── Web estimate proxy — forwards to rcp-sms-bot /api/web-estimate ───────────
+  app.post("/api/web-estimate", express.json(), async (req, res) => {
+    try {
+      const SMS_BOT = "https://rcp-sms-bot-production.up.railway.app";
+      const upstream = await fetch(`${SMS_BOT}/api/web-estimate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(req.body),
