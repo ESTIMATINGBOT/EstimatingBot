@@ -817,7 +817,7 @@ SMOOTH DOWELS: Must confirm diameter. 1/2"=$1.45, 5/8"=$2.15, 3/4"=$3.12, 7/8"=$
 
 DOWEL CAPS: Must confirm size. 1/2"=$0.30, 5/8"=$0.36, 3/4"=$0.41
 
-EXPANSION JOINT: Must confirm width. 4"=$4.16/10', 6"=$6.56/10'
+EXPANSION JOINT (FIBER): Sold by the piece, 10 pieces per pack. 4"=$4.16/pc, 6"=$6.56/pc. "1 pack" = 10 pieces — if customer says "packs", multiply by 10 automatically. Never ask how many pieces if they said "packs".
 
 CHAIRS (wire): Must confirm height. 2-1/4"=$24.75/500pk, 3-1/4"=$27.00/500pk
 
