@@ -338,30 +338,49 @@ export default function ChatPage() {
         .trim();
 
       // Check if AI embedded a structured order/estimate JSON block — auto-fire immediately
-      const orderMatch = stripped.match(/```order\n([\s\S]+?)\n```/);
+      // Flexible regex: handles backtick fences with or without exact newlines, extra whitespace
+      const orderMatch = stripped.match(/```order\s*\n?([\s\S]+?)\n?```/);
       if (orderMatch) {
+        let order: OrderData | null = null;
         try {
-          const order: OrderData = JSON.parse(orderMatch[1]);
-          const cleanReply = stripped.replace(/```order\n[\s\S]+?\n```/, "").trim();
+          order = JSON.parse(orderMatch[1].trim());
+        } catch (parseErr) {
+          console.error("[chat] Failed to parse order JSON:", parseErr, "\nRaw:", orderMatch[1]);
+          // Surface the error to the customer instead of silently failing
+          addMessage({ role: "assistant", content: "I ran into a problem creating your invoice. Please call us at 469-631-7730 and we'll get it sorted right away. (ERR-ORDER-PARSE)" });
+          return;
+        }
 
-          if (order.readyToEstimate && order.customerName && order.customerPhone && order.items?.length) {
-            // ESTIMATE flow
-            addMessage({ role: "assistant", content: cleanReply });
-            setLoading(false);
-            handledByInvoice = true;
-            await createEstimate(order);
-            return;
-          }
+        const cleanReply = stripped.replace(/```order[\s\S]+?```/, "").trim();
 
-          if (order.readyToInvoice && order.customerName && order.customerPhone && order.items?.length) {
-            // INVOICE flow
-            addMessage({ role: "assistant", content: cleanReply });
-            setLoading(false);
-            handledByInvoice = true;
-            await createInvoice(order);
-            return;
-          }
-        } catch {}
+        if (order && order.readyToEstimate && order.customerName && order.customerPhone && order.items?.length) {
+          // ESTIMATE flow
+          addMessage({ role: "assistant", content: cleanReply });
+          setLoading(false);
+          handledByInvoice = true;
+          await createEstimate(order);
+          return;
+        }
+
+        if (order && order.readyToInvoice && order.customerName && order.customerPhone && order.items?.length) {
+          // INVOICE flow
+          addMessage({ role: "assistant", content: cleanReply });
+          setLoading(false);
+          handledByInvoice = true;
+          await createInvoice(order);
+          return;
+        }
+
+        // JSON parsed but missing required fields — surface the error
+        if (order) {
+          const missing = [];
+          if (!order.customerName) missing.push("name");
+          if (!order.customerPhone) missing.push("phone");
+          if (!order.items?.length) missing.push("items");
+          console.error("[chat] Order JSON missing required fields:", missing, order);
+          addMessage({ role: "assistant", content: `I wasn't able to create your invoice because some required information is missing (${missing.join(", ")}). Could you please confirm your ${missing.join(" and ")}?` });
+          return;
+        }
       }
 
       addMessage({ role: "assistant", content: stripped });
