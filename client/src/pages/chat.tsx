@@ -639,27 +639,32 @@ export default function ChatPage() {
           >
             <ImagePlus className="w-4 h-4" />
           </button>
-          <Textarea
-            ref={textareaRef}
-            placeholder="Ask about pricing or place an order..."
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            onKeyPress={onKeyPress}
-            enterKeyHint="send"
-            rows={1}
-            disabled={invoicing || estimating}
-            className="resize-none text-sm bg-white/5 border-white/20 text-white placeholder:text-gray-500 focus:border-[#C8D400]/50 rounded-xl flex-1"
-            style={{ minHeight: "42px", maxHeight: "120px" }}
-          />
-          <Button
-            onClick={() => send()}
-            disabled={(!input.trim() && !pendingImage) || loading || invoicing || estimating}
-            size="sm"
-            className="bg-[#C8D400] hover:bg-[#b0bb00] text-black font-semibold h-[42px] px-4 rounded-xl flex-shrink-0"
+          <form
+            onSubmit={e => { e.preventDefault(); send(); }}
+            className="flex gap-2 items-end flex-1"
           >
-            <Send className="w-4 h-4" />
-          </Button>
+            <textarea
+              ref={textareaRef}
+              placeholder="Ask about pricing or place an order..."
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={onKeyDown}
+              onKeyPress={onKeyPress}
+              enterKeyHint="send"
+              rows={1}
+              disabled={invoicing || estimating}
+              className="resize-none text-sm bg-white/5 border-white/20 text-white placeholder:text-gray-500 focus:border-[#C8D400]/50 rounded-xl flex-1 p-3 outline-none"
+              style={{ minHeight: "42px", maxHeight: "120px" }}
+            />
+            <Button
+              type="submit"
+              disabled={(!input.trim() && !pendingImage) || loading || invoicing || estimating}
+              size="sm"
+              className="bg-[#C8D400] hover:bg-[#b0bb00] text-black font-semibold h-[42px] px-4 rounded-xl flex-shrink-0"
+            >
+              <Send className="w-4 h-4" />
+            </Button>
+          </form>
         </div>
         <p className="text-xs text-gray-600 mt-1.5 text-center">
           <span className="hidden sm:inline">Enter to send · Shift+Enter for new line · </span>
