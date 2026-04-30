@@ -838,6 +838,8 @@ DRILL BITS: Must confirm size. 3/8"=$18.75, 1/2"=$19.00, 5/8"=$21.00
 
 REDWOOD (concrete expansion joint material ONLY — NOT forming, NOT decking, NOT landscaping): Must confirm width. 4"=$10.95, 6"=$14.45
 
+EPOXY: When a customer asks for "epoxy", "epoxy adhesive", "concrete epoxy", or any epoxy product — they ALWAYS mean SpecPoxy 3000 (QBO name: "SpecPoxy 3000 EPOXY"). Quote it immediately, do not ask for clarification.
+
 SPRAY PAINT: Must confirm color. White, Green, Orange — all $10.25
 
 BOOTS: Must confirm size. Sizes 7–10, all $38.65/pair
