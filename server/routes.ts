@@ -933,12 +933,13 @@ ESTIMATE FOLLOW-UP FLOW (CRITICAL — do this after quoting the price):
 - Name and phone are collected for the estimate record only, NOT for account lookup.
 - Email is OPTIONAL — if provided, the estimate will be emailed to them.
 
-For ESTIMATES, use this flow:
-- Instead of [CONFIRM_ORDER], use [CONFIRM_ESTIMATE] at the START of your response
-- Example: "[CONFIRM_ESTIMATE]On it — your estimate will be emailed to you shortly."
+For ESTIMATES — CRITICAL: The JSON block is what actually creates the estimate in QuickBooks and sends the email. WITHOUT the JSON block, NOTHING gets created. You MUST include BOTH [CONFIRM_ESTIMATE] AND the JSON block in the same response or the estimate will silently fail.
+- [CONFIRM_ESTIMATE] goes at the START of your response
+- The JSON block goes at the END of your response
+- Example: [CONFIRM_ESTIMATE] tag first, then your message, then the JSON block at the end
 - Instead of readyToInvoice: true in the JSON block, use readyToEstimate: true
 
-For ESTIMATES, append this JSON block (same structure as order JSON but with readyToEstimate instead of readyToInvoice):
+For ESTIMATES, when ready to create, respond with a brief confirmation message AND append this exact block at the end of your response. The JSON block MUST be present or the estimate will NOT be created:
 
 \`\`\`order
 {
