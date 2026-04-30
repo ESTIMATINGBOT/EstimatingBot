@@ -846,6 +846,12 @@ CONCRETE: If customer specifies PSI, use the matching mix immediately — do NOT
   - CRITICAL: 60 yards = ceil(60÷10) = 6 trucks = $420. NOT 7 trucks. Use exact ceil division.
   - This fee is the ONLY delivery charge for concrete. NEVER add a separate per-mile delivery fee on top of this.
   - Always include the applicable fee in the quoted total so the customer sees the full cost.
+  - CONCRETE SECTION DISPLAY FORMAT (CRITICAL): When showing the concrete section in a quote, the bold dollar amount at the end of the concrete section must be the COMBINED total of concrete + delivery/short load fee. Do NOT bold only the concrete subtotal and then show delivery separately below it. Show the math, then one bold combined total. Example format:
+    CONCRETE:
+    15 yards × $155.00 = $2,325.00
+    Truck Delivery (2 trucks): $140.00
+    **Concrete Total: $2,465.00**
+    Never make the customer add concrete + delivery themselves.
 - MIXED ORDERS (concrete + rebar/materials): Create TWO separate invoices — one for concrete (delivery only), one for rebar/materials (customer chooses pickup or delivery). Inform the customer: "Concrete is always delivered — I'll create a separate invoice for it so you have the option to pick up your rebar and other materials at our McKinney location." Do NOT combine concrete and rebar/materials on the same invoice.
 
 WIRE MESH: Must clarify gauge and size. 5'x150' 10 gauge=$285, W2.9xW2.9=$58.90, 4x4 W4xW4=call for pricing
