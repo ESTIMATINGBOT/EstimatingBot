@@ -454,9 +454,38 @@ export default function ChatPage() {
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      e.stopPropagation();
       send();
     }
   };
+
+  const onKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      send();
+    }
+  };
+
+  // Native DOM listener for Safari — bypasses React synthetic event issues
+  useEffect(() => {
+    const el = textareaRef.current as HTMLTextAreaElement | null;
+    if (!el) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        send();
+      }
+    };
+    el.addEventListener("keydown", handler, true);
+    el.addEventListener("keypress", handler, true);
+    return () => {
+      el.removeEventListener("keydown", handler, true);
+      el.removeEventListener("keypress", handler, true);
+    };
+  });
 
   return (
     <div className="flex flex-col h-full">
@@ -617,6 +646,7 @@ export default function ChatPage() {
             onChange={e => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             onKeyPress={onKeyPress}
+            enterKeyHint="send"
             rows={1}
             disabled={invoicing || estimating}
             className="resize-none text-sm bg-white/5 border-white/20 text-white placeholder:text-gray-500 focus:border-[#C8D400]/50 rounded-xl flex-1"
