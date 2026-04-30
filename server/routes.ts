@@ -802,7 +802,7 @@ DOBIE BRICKS (concrete chairs): 2 options — ask if not specified.
 
 BAR TIES (box of 5,000): Must confirm length. Options: 4"=$33.05, 4.5"=$35.05, 5"=$38.05, 6"=$46.05, 6.5"=$47.05
 
-TIE WIRE: Must clarify format. Roll=$4.99, Reel=$35.99, Bulk box=$95.50
+TIE WIRE: "tie wire" or "tie wire roll" = Tie Wire Roll 16.5ga at $4.99/roll. Quote immediately — do NOT ask about format. Only offer the Reel ($35.99) or Bulk Box ($95.50) if the customer specifically says "reel" or "bulk box".
 
 METAL STAKES: Must confirm length. 18"=$4.45, 24"=$4.85, 36"=$5.10
 
@@ -813,7 +813,7 @@ LUMBER: Must confirm exact size. 2x4x16 SPF=$8.89, 2x6x16 SPF=$10.45, 2x8x16 SYP
 
 ANCHOR BOLTS: Must confirm size and galvanized/non-galvanized. 5/8" Galv=$42.65, 5/8" Non-Galv=$29.00, 1/2"x8"=$48.50
 
-SMOOTH DOWELS: Must confirm diameter. 1/2"=$1.45, 5/8"=$2.15, 3/4"=$3.12, 7/8"=$4.24
+SMOOTH DOWELS: "dowel" or "smooth dowel" = smooth dowel bars, 2' each. Must confirm bar size/diameter. 1/2" (#4)=$1.45, 5/8" (#5)=$2.15, 3/4" (#6)=$3.12, 7/8" (#7)=$4.24. If customer says "#4 dowel", "#5 dowel", etc. — match to the diameter automatically. NEVER assume dowel means rebar.
 
 DOWEL CAPS: Must confirm size. 1/2"=$0.30, 5/8"=$0.36, 3/4"=$0.41
 
@@ -836,7 +836,7 @@ NAILS: Must confirm size. 8D, 16D, 20 Common — all $55.75/50lb
 
 DRILL BITS: Must confirm size. 3/8"=$18.75, 1/2"=$19.00, 5/8"=$21.00
 
-REDWOOD (concrete expansion joint material ONLY — NOT forming, NOT decking, NOT landscaping): Must confirm width. 4"=$10.95, 6"=$14.45
+REDWOOD (concrete expansion joint material ONLY — NOT forming, NOT decking, NOT landscaping): Must confirm width ONLY if not specified. If customer says "1 redwood 6\"" or "redwood 6" treat it as Redwood 6" and quote immediately — do NOT ask "did you mean 1 piece?". Take the quantity at face value. 4"=$10.95, 6"=$14.45
 
 EPOXY: When a customer asks for "epoxy", "epoxy adhesive", "concrete epoxy", or any epoxy product — they ALWAYS mean SpecPoxy 3000 (QBO name: "SpecPoxy 3000 EPOXY"). Quote it immediately, do not ask for clarification.
 
