@@ -21,11 +21,18 @@ interface OrderData {
   tax?: number;
   total?: number;
   readyToInvoice?: boolean;
+  readyToEstimate?: boolean;
 }
 
 interface InvoiceResult {
   invoiceNumber: string;
   paymentLink: string;
+  total: number;
+}
+
+interface EstimateResult {
+  estimateNumber: string;
+  estimateLink?: string;
   total: number;
 }
 
@@ -51,6 +58,8 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false);
   const [invoicing, setInvoicing] = useState(false);
   const [invoice, setInvoice] = useState<InvoiceResult | null>(null);
+  const [estimating, setEstimating] = useState(false);
+  const [estimate, setEstimate] = useState<EstimateResult | null>(null);
   const [pendingOrder, setPendingOrder] = useState<OrderData | null>(null);
   const [pendingImage, setPendingImage] = useState<{ base64: string; mediaType: string; dataUrl: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -157,6 +166,59 @@ export default function ChatPage() {
     } finally {
       setInvoicing(false);
       setPendingOrder(null);
+    }
+  };
+
+  const createEstimate = async (order: OrderData) => {
+    setEstimating(true);
+    try {
+      let res: Response;
+      try {
+        res = await fetchWithTimeout("/api/web-estimate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customerName: order.customerName,
+            customerEmail: order.customerEmail,
+            customerPhone: order.customerPhone || "",
+            customerCompany: order.customerCompany || "",
+            deliveryAddress: order.deliveryAddress || "",
+            deliveryNotes: order.deliveryNotes || "",
+            items: order.items,
+          }),
+        }, 25000);
+      } catch (err: any) {
+        const code = err?.message === "TIMEOUT" ? "ERR-EST-TIMEOUT" : "ERR-EST-NETWORK";
+        addMessage({ role: "assistant", content: `We weren't able to reach our estimating system. Please call us at **469-631-7730** and we'll get it sorted out. (${code})` });
+        return;
+      }
+      const data = await res.json();
+      if (res.status === 403 && data.error === "customer_not_found") {
+        addMessage({
+          role: "assistant",
+          content: `We weren't able to verify an account for **${order.customerName}** with that phone number. To receive estimates online you'll need an account on file with us.\n\nGive us a call at **469-631-7730** or stop by **2112 N Custer Rd, McKinney, TX 75071** and we'll get you set up — it only takes a minute.`,
+        });
+        return;
+      }
+      if (!res.ok || !data.success) {
+        throw new Error(`${data.error || "Estimate creation failed"} (ERR-EST-${res.status})`);
+      }
+      const estimateTotal = typeof data.total === "number" ? data.total : parseFloat(data.total) || 0;
+      setEstimate({ estimateNumber: data.estimateNumber, estimateLink: data.estimateLink, total: estimateTotal });
+      addMessage({
+        role: "assistant",
+        content: `Estimate #${data.estimateNumber} has been created for **$${estimateTotal.toFixed(2)}** (includes 8.25% tax).${order.customerEmail ? ` A copy has been emailed to ${order.customerEmail}.` : ""} Ready to place the order? Just let me know and I'll convert it to an invoice.`,
+      });
+      return;
+    } catch (err: any) {
+      console.error("[estimate error]", err?.message, err);
+      const errCode = err?.message || "ERR-EST-UNKNOWN";
+      addMessage({
+        role: "assistant",
+        content: `There was an issue creating your estimate — please call us at **469-631-7730** and we'll take care of it right away. (${errCode})`,
+      });
+    } finally {
+      setEstimating(false);
     }
   };
 
@@ -276,25 +338,40 @@ export default function ChatPage() {
       const data = await res.json();
       const replyText: string = data.reply || "Sorry, something went wrong. Please call 469-631-7730.";
 
-      // Check if AI embedded a structured order JSON block — auto-fire invoice immediately
-      const orderMatch = replyText.match(/```order\n([\s\S]+?)\n```/);
+      // Strip internal tags before display
+      const stripped = replyText
+        .replace(/\[CONFIRM_ORDER\]/g, "")
+        .replace(/\[CONFIRM_ESTIMATE\]/g, "")
+        .trim();
+
+      // Check if AI embedded a structured order/estimate JSON block — auto-fire immediately
+      const orderMatch = stripped.match(/```order\n([\s\S]+?)\n```/);
       if (orderMatch) {
         try {
           const order: OrderData = JSON.parse(orderMatch[1]);
-          if (order.readyToInvoice && order.customerName && order.customerPhone && order.items?.length) {
-            // Show the reply without the JSON block first
-            const cleanReply = replyText.replace(/```order\n[\s\S]+?\n```/, "").trim();
+          const cleanReply = stripped.replace(/```order\n[\s\S]+?\n```/, "").trim();
+
+          if (order.readyToEstimate && order.customerName && order.customerPhone && order.items?.length) {
+            // ESTIMATE flow
             addMessage({ role: "assistant", content: cleanReply });
             setLoading(false);
             handledByInvoice = true;
-            // Auto-create invoice immediately — no extra confirm button needed
+            await createEstimate(order);
+            return;
+          }
+
+          if (order.readyToInvoice && order.customerName && order.customerPhone && order.items?.length) {
+            // INVOICE flow
+            addMessage({ role: "assistant", content: cleanReply });
+            setLoading(false);
+            handledByInvoice = true;
             await createInvoice(order);
             return;
           }
         } catch {}
       }
 
-      addMessage({ role: "assistant", content: replyText });
+      addMessage({ role: "assistant", content: stripped });
     } catch (err: any) {
       const code = err?.message === "TIMEOUT" ? "ERR-SEND-TIMEOUT" : "ERR-SEND-UNKNOWN";
       addMessage({ role: "assistant", content: `Something went wrong. Please try again or call us at **469-631-7730**. (${code})` });
@@ -366,7 +443,32 @@ export default function ChatPage() {
           </div>
         )}
 
-        {(loading || invoicing) && (
+        {/* Estimate result card */}
+        {estimate && (
+          <div className="flex justify-start">
+            <div className="ml-11 bg-[#C8D400]/10 border border-[#C8D400]/30 rounded-xl p-4 space-y-3 max-w-xs">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-[#C8D400]" />
+                <span className="text-white font-semibold text-sm">Estimate #{estimate.estimateNumber}</span>
+              </div>
+              <p className="text-gray-300 text-sm">Total: <span className="text-white font-bold">${typeof estimate.total === "number" ? estimate.total.toFixed(2) : "—"}</span></p>
+              {estimate.estimateLink ? (
+                <a
+                  href={estimate.estimateLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 bg-[#C8D400] text-black text-sm font-bold px-4 py-2 rounded-lg hover:bg-[#b0bb00] transition-colors w-full justify-center"
+                >
+                  <ExternalLink className="w-4 h-4" /> View Estimate
+                </a>
+              ) : (
+                <p className="text-xs text-gray-400">Check your email for the estimate PDF.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {(loading || invoicing || estimating) && (
           <div className="flex justify-start">
             <div className="w-8 h-8 rounded-full bg-[#C8D400]/20 border border-[#C8D400]/40 flex items-center justify-center flex-shrink-0 mr-3 mt-0.5">
               <MessageSquare className="w-4 h-4 text-[#C8D400]" />
@@ -434,7 +536,7 @@ export default function ChatPage() {
           {/* Image upload button */}
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={invoicing || loading}
+            disabled={invoicing || estimating || loading}
             title="Attach a photo"
             className="h-[42px] w-[42px] flex items-center justify-center rounded-xl border border-white/20 bg-white/5 text-gray-400 hover:border-[#C8D400]/50 hover:text-[#C8D400] transition-colors flex-shrink-0 disabled:opacity-40"
           >
@@ -447,13 +549,13 @@ export default function ChatPage() {
             onChange={e => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             rows={1}
-            disabled={invoicing}
+            disabled={invoicing || estimating}
             className="resize-none text-sm bg-white/5 border-white/20 text-white placeholder:text-gray-500 focus:border-[#C8D400]/50 rounded-xl flex-1"
             style={{ minHeight: "42px", maxHeight: "120px" }}
           />
           <Button
             onClick={() => send()}
-            disabled={(!input.trim() && !pendingImage) || loading || invoicing}
+            disabled={(!input.trim() && !pendingImage) || loading || invoicing || estimating}
             size="sm"
             className="bg-[#C8D400] hover:bg-[#b0bb00] text-black font-semibold h-[42px] px-4 rounded-xl flex-shrink-0"
           >
