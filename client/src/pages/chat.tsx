@@ -383,6 +383,47 @@ export default function ChatPage() {
         }
       }
 
+      // CONFIRM_ESTIMATE detected but no JSON block — retry to get the JSON
+      const hadConfirmEstimate = replyText.includes("[CONFIRM_ESTIMATE]");
+      const hadConfirmOrder = replyText.includes("[CONFIRM_ORDER]");
+      if (hadConfirmEstimate || hadConfirmOrder) {
+        addMessage({ role: "assistant", content: stripped });
+        setLoading(true);
+        try {
+          const retryMessages = [
+            ...messages.map(m => ({ role: m.role, content: m.content })),
+            { role: "assistant" as const, content: stripped },
+            { role: "user" as const, content: "Please emit the JSON block now so the system can create it. Output ONLY the ```order ... ``` block with all fields filled in — nothing else." },
+          ];
+          const retryRes = await fetchWithTimeout("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ messages: retryMessages }),
+          }, 25000);
+          if (retryRes.ok) {
+            const retryData = await retryRes.json();
+            const retryReply: string = retryData.reply || "";
+            const retryMatch = retryReply.match(/```order\s*\n?([\s\S]+?)\n?```/);
+            if (retryMatch) {
+              let retryOrder: OrderData | null = null;
+              try { retryOrder = JSON.parse(retryMatch[1].trim()); } catch {}
+              if (retryOrder && retryOrder.customerName && retryOrder.customerPhone && retryOrder.items?.length) {
+                handledByInvoice = true;
+                if (retryOrder.readyToEstimate) {
+                  await createEstimate(retryOrder);
+                } else {
+                  await createInvoice(retryOrder);
+                }
+                return;
+              }
+            }
+          }
+        } catch {}
+        // Retry failed — show error
+        addMessage({ role: "assistant", content: "I ran into a problem creating your estimate. Please call us at **469-631-7730** and we'll take care of it. (ERR-EST-RETRY)" });
+        return;
+      }
+
       addMessage({ role: "assistant", content: stripped });
     } catch (err: any) {
       const code = err?.message === "TIMEOUT" ? "ERR-SEND-TIMEOUT" : "ERR-SEND-UNKNOWN";
