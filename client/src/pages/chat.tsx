@@ -1,3 +1,4 @@
+// v2026-04-30-cache-bust
 import { useState, useRef, useEffect } from "react";
 import { Send, MessageSquare, CheckCircle2, ExternalLink, ImagePlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -383,31 +384,36 @@ export default function ChatPage() {
         }
       }
 
-      // CONFIRM_ESTIMATE detected but no JSON block — retry to get the JSON
+      // CONFIRM_ESTIMATE / CONFIRM_ORDER detected but no JSON block — retry to extract JSON
       const hadConfirmEstimate = replyText.includes("[CONFIRM_ESTIMATE]");
       const hadConfirmOrder = replyText.includes("[CONFIRM_ORDER]");
       if (hadConfirmEstimate || hadConfirmOrder) {
+        // Show the stripped message (tags removed) to customer while we retry
         addMessage({ role: "assistant", content: stripped });
         setLoading(true);
+        let retrySuccess = false;
         try {
+          // Build full history including the AI's confirmation message (stripped of tags)
           const retryMessages = [
             ...newHistory.map(m => ({ role: m.role, content: m.content })),
             { role: "assistant" as const, content: stripped },
-            { role: "user" as const, content: "Please emit the JSON block now so the system can create it. Output ONLY the ```order ... ``` block with readyToEstimate: true (or readyToInvoice: true for orders) and all item details including qboItemId filled in — nothing else." },
+            { role: "user" as const, content: "SYSTEM: Please now output ONLY the JSON block to create the " + (hadConfirmEstimate ? "estimate" : "order") + ". Use this exact format with no other text:\n```order\n{\"customerName\":\"...\",\"customerPhone\":\"...\",\"customerEmail\":\"...\",\"items\":[{\"name\":\"...\",\"qboItemId\":\"...\",\"qty\":1,\"unitPrice\":0}],\"" + (hadConfirmEstimate ? "readyToEstimate" : "readyToInvoice") + "\":true}\n```" },
           ];
           const retryRes = await fetchWithTimeout("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ messages: retryMessages }),
-          }, 25000);
+          }, 30000);
           if (retryRes.ok) {
             const retryData = await retryRes.json();
             const retryReply: string = retryData.reply || "";
+            console.log("[chat] retry reply:", retryReply.slice(0, 500));
             const retryMatch = retryReply.match(/```order\s*\n?([\s\S]+?)\n?```/);
             if (retryMatch) {
               let retryOrder: OrderData | null = null;
-              try { retryOrder = JSON.parse(retryMatch[1].trim()); } catch {}
+              try { retryOrder = JSON.parse(retryMatch[1].trim()); } catch (pe) { console.error("[chat] retry JSON parse error:", pe); }
               if (retryOrder && retryOrder.customerName && retryOrder.customerPhone && retryOrder.items?.length) {
+                retrySuccess = true;
                 handledByInvoice = true;
                 if (retryOrder.readyToEstimate) {
                   await createEstimate(retryOrder);
@@ -415,12 +421,21 @@ export default function ChatPage() {
                   await createInvoice(retryOrder);
                 }
                 return;
+              } else {
+                console.error("[chat] retry order missing fields:", retryOrder);
               }
+            } else {
+              console.error("[chat] retry: no JSON block found in reply:", retryReply.slice(0, 300));
             }
+          } else {
+            console.error("[chat] retry call failed with status:", retryRes.status);
           }
-        } catch {}
-        // Retry failed — show error
-        addMessage({ role: "assistant", content: "I ran into a problem creating your estimate. Please call us at **469-631-7730** and we'll take care of it. (ERR-EST-RETRY)" });
+        } catch (retryErr) {
+          console.error("[chat] retry exception:", retryErr);
+        }
+        if (!retrySuccess) {
+          addMessage({ role: "assistant", content: "I ran into a problem creating your estimate. Please call us at **469-631-7730** and we'll take care of it. (ERR-EST-RETRY)" });
+        }
         return;
       }
 
