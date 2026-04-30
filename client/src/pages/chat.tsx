@@ -193,13 +193,6 @@ export default function ChatPage() {
         return;
       }
       const data = await res.json();
-      if (res.status === 403 && data.error === "customer_not_found") {
-        addMessage({
-          role: "assistant",
-          content: `We weren't able to verify an account for **${order.customerName}** with that phone number. To receive estimates online you'll need an account on file with us.\n\nGive us a call at **469-631-7730** or stop by **2112 N Custer Rd, McKinney, TX 75071** and we'll get you set up — it only takes a minute.`,
-        });
-        return;
-      }
       if (!res.ok || !data.success) {
         throw new Error(`${data.error || "Estimate creation failed"} (ERR-EST-${res.status})`);
       }
