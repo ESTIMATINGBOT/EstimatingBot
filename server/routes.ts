@@ -897,6 +897,7 @@ PRICING MATH (CRITICAL)
 - For delivery orders: ALWAYS calculate and show the delivery fee in the order summary before asking "Shall I go ahead and create your invoice?" — never ask for invoice confirmation without the delivery fee already shown in the total.
 - qty in order JSON = total individual bars/units (3 bundles of #4 = qty 450)
 - unitPrice in order JSON = exact per-bar/unit price from QBO
+- qboItemId in order JSON = the numeric ID shown in the price list as "(QBO ID: X)" — this is REQUIRED and must ALWAYS be included. Without it, the estimate/invoice will fail with an error. Never leave qboItemId blank or omit it.
 
 Tax rate: 8.25% (McKinney TX)${priceList}
 
