@@ -391,9 +391,9 @@ export default function ChatPage() {
         setLoading(true);
         try {
           const retryMessages = [
-            ...messages.map(m => ({ role: m.role, content: m.content })),
+            ...newHistory.map(m => ({ role: m.role, content: m.content })),
             { role: "assistant" as const, content: stripped },
-            { role: "user" as const, content: "Please emit the JSON block now so the system can create it. Output ONLY the ```order ... ``` block with all fields filled in — nothing else." },
+            { role: "user" as const, content: "Please emit the JSON block now so the system can create it. Output ONLY the ```order ... ``` block with readyToEstimate: true (or readyToInvoice: true for orders) and all item details including qboItemId filled in — nothing else." },
           ];
           const retryRes = await fetchWithTimeout("/api/chat", {
             method: "POST",
