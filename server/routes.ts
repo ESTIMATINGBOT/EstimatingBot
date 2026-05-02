@@ -733,12 +733,48 @@ The only thing you may ask (if not provided) is the O.C. spacing. Once you have 
 
 SLAB REBAR PRICING (CRITICAL — READ CAREFULLY):
 For slab takeoffs, price ONLY the bars actually needed — NOT full bundle quantities.
-Example: 30×10 slab, #4 @ 12" OC = 10 bars one way + 30 bars the other = 40 bars needed.
-Price = 40 bars × $X/bar. Do NOT multiply by bundle size (150). Do NOT say "13 bundles = 1,950 bars × price."
-Bundles are a PACKAGING unit for how we ship. Customers pay per bar. A 30×10 slab needs ~40 bars, not 1,950.
-Formula for bars in each direction: ceil(dimension_ft / spacing_ft) + 1. Run both directions and add totals.
-Add 7% waste: total_bars × 1.07, then ceil to whole number.
-Invoice qty = total bars needed (with waste). unitPrice = per-bar price from QBO.
+Bundles are a PACKAGING unit for how we ship. Customers pay per bar.
+
+SLAB REBAR CALCULATION (CRITICAL — THIS IS THE ONLY CORRECT METHOD):
+A rebar mat has bars running in TWO directions. Each "bar" in a row is a physical 20' stick.
+The formula has TWO steps per direction — do NOT skip step 2:
+
+Step 1 — Number of rows in each direction:
+  rows_A = ceil(dim_A_ft / spacing_ft) + 1   ← how many parallel lines of bar run across dimension B
+  rows_B = ceil(dim_B_ft / spacing_ft) + 1   ← how many parallel lines of bar run across dimension A
+
+Step 2 — Sticks needed per row (each row spans the perpendicular dimension):
+  sticks_per_row_A = ceil(dim_B_ft / 20)     ← each row in direction A spans dimension B
+  sticks_per_row_B = ceil(dim_A_ft / 20)     ← each row in direction B spans dimension A
+
+Step 3 — Total sticks:
+  total_sticks = (rows_A × sticks_per_row_A) + (rows_B × sticks_per_row_B)
+
+Step 4 — Add 7% waste:
+  final_qty = ceil(total_sticks × 1.07)
+
+CORRECT EXAMPLE — 50×100 slab, #3 @ 12" OC:
+  rows in direction 1 = ceil(100/1) + 1 = 101 rows, each spanning 50ft → ceil(50/20) = 3 sticks each → 101×3 = 303 sticks
+  rows in direction 2 = ceil(50/1) + 1 = 51 rows, each spanning 100ft → ceil(100/20) = 5 sticks each → 51×5 = 255 sticks
+  Total = 558 sticks × 1.07 waste = 597 sticks
+
+WRONG EXAMPLE (NEVER DO THIS): "ceil(50/1)+1 = 51 bars + ceil(100/1)+1 = 101 bars = 152 bars total"
+  This only counts rows, NOT the 20' sticks needed to fill each row. It is always massively wrong.
+
+CORRECT EXAMPLE — 60×40 slab, #4 @ 18" OC (spacing_ft = 1.5):
+  rows_A = ceil(40/1.5)+1 = 28 rows spanning 60ft → ceil(60/20)=3 sticks → 28×3 = 84 sticks
+  rows_B = ceil(60/1.5)+1 = 41 rows spanning 40ft → ceil(40/20)=2 sticks → 41×2 = 82 sticks
+  Total = 166 sticks × 1.07 = 178 sticks
+
+CORRECT EXAMPLE — 80×100 slab, #3 @ 18" OC (spacing_ft = 1.5):
+  rows_A = ceil(100/1.5)+1 = 68 rows, each spanning 80ft → ceil(80/20)=4 sticks each → 68×4 = 272 sticks
+  rows_B = ceil(80/1.5)+1 = 54 rows, each spanning 100ft → ceil(100/20)=5 sticks each → 54×5 = 270 sticks
+  total_sticks = 272 + 270 = 542
+  final_qty = ceil(542 × 1.07) = 580 sticks
+  WRONG answer = 131 sticks (only counted rows — missing the sticks-per-row multiplier entirely)
+  RIGHT answer = 580 sticks
+
+Invoice qty = final_qty sticks. unitPrice = per-bar price from QBO.
 
 EXACT SIZE MATCHING (CRITICAL):
 - Always match the EXACT size the customer states to the product list.
