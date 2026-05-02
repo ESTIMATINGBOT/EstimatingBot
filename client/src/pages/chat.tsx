@@ -42,7 +42,7 @@ interface EstimateResult {
 const WELCOME: Message = {
   role: "assistant",
   content:
-    "Hi! I'm the RCP Assistant. I can help you with rebar questions, material quantities, and placing orders with a QuickBooks invoice.\n\nFor plan uploads and automated AI estimates, use the **Estimate** tab above.\n\nHow can I help you today?",
+    "Hi! I'm the RCP Assistant. I can help you with rebar questions, material quantities, and placing orders with a QuickBooks invoice.\n\nFor plan uploads and automated AI estimates, use the **Instant Takeoff** tab above.\n\nHow can I help you today?",
 };
 
 function renderContent(text: string) {
