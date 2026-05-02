@@ -603,17 +603,142 @@ export async function registerRoutes(httpServer: Server, app: Express) {
   });
 
   // ── AI ORDER CHAT ────────────────────────────────────────────────────────────
+  // ── CUSTOMER MEMORY EXTRACTION ──────────────────────────────────────────────
+  // Scans message history for customer name, email, company mentions and persists them.
+  function extractAndSaveCustomerInfo(
+    messages: { role: "user" | "assistant"; content: string }[],
+    sessionId: string
+  ): void {
+    try {
+      const allText = messages.map(m => m.content).join(" ");
+
+      // Extract email
+      const emailMatch = allText.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
+      const email = emailMatch ? emailMatch[0].toLowerCase() : null;
+
+      // Extract name from common patterns
+      let name: string | undefined;
+      const namePatterns = [
+        /my name is ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+        /I'?m ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i,
+        /\[CONFIRM_ESTIMATE\][^\n]*name=([^,\n]+)/i,
+        /called with name=([^,\n]+)/i,
+      ];
+      for (const pat of namePatterns) {
+        const m = allText.match(pat);
+        if (m) { name = m[1].trim(); break; }
+      }
+
+      // Extract phone
+      const phoneMatch = allText.match(/\b(\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4})\b/);
+      const phone = phoneMatch ? phoneMatch[1] : undefined;
+
+      // Extract company (look for "from [Company]" or "with [Company]" or "at [Company]")
+      let company: string | undefined;
+      const companyMatch = allText.match(/(?:from|with|at|for) ([A-Z][A-Za-z0-9 &,.']+(?:LLC|Inc|Corp|Construction|Concrete|Supply|Contractor|Builders|Group|Co\.?))/i);
+      if (companyMatch) company = companyMatch[1].trim();
+
+      if (email) {
+        storage.upsertCustomerMemory(email, {
+          sessionId,
+          ...(name && { name }),
+          ...(company && { company }),
+          ...(phone && { phone }),
+        });
+      } else if (name || phone) {
+        // No email — update by session if record exists
+        const existing = storage.getCustomerMemoryBySession(sessionId);
+        if (existing && existing.email) {
+          storage.upsertCustomerMemory(existing.email, {
+            sessionId,
+            ...(name && { name }),
+            ...(company && { company }),
+            ...(phone && { phone }),
+          });
+        }
+      }
+    } catch (e) {
+      // Non-fatal — never block chat response
+    }
+  }
+
+  // ── AUTO-FLAG CLASSIFICATION (fire-and-forget) ────────────────────────────
+  async function maybeAutoFlag(
+    sessionId: string,
+    customerMessage: string,
+    botResponse: string,
+    fullConversation: { role: string; content: string }[],
+    anthropicKey: string
+  ): Promise<void> {
+    try {
+      const classifyRes = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": anthropicKey,
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5",
+          max_tokens: 150,
+          system: `You are a quality classifier for a concrete/rebar supply chatbot.
+Return JSON only: {"should_flag": bool, "reason": "customer_correction"|"bot_claimed_wrong"|"unanswered_question"|"none", "detail": "brief description or empty"}
+
+Flag if:
+1. Customer says bot is wrong, made an error, gave incorrect info
+2. Customer is correcting bot's price, calculation, or product info
+3. Bot said it doesn't know / told customer to call for info it should know
+4. Customer expresses clear frustration implying bot failure
+Do NOT flag normal conversation or successful transactions.`,
+          messages: [
+            {
+              role: "user",
+              content: `Customer message: ${customerMessage}\n\nBot response: ${botResponse}`,
+            },
+          ],
+        }),
+      });
+      if (!classifyRes.ok) return;
+      const classifyData = await classifyRes.json() as any;
+      const rawText = classifyData.content?.[0]?.text || "";
+      let parsed: any = null;
+      try {
+        // Strip markdown code fences if present
+        const jsonStr = rawText.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+        parsed = JSON.parse(jsonStr);
+      } catch { return; }
+      if (parsed?.should_flag && parsed.reason !== "none") {
+        // Try to find customer name from conversation
+        const nameMatch = fullConversation.map(m => m.content).join(" ").match(/my name is ([A-Z][a-z]+(?: [A-Z][a-z]+)*)/i);
+        const customerName = nameMatch ? nameMatch[1] : undefined;
+        storage.flagConversation({
+          sessionId,
+          customerName,
+          flagReason: parsed.reason,
+          flagDetail: parsed.detail || "",
+          customerMessage,
+          botResponse,
+          fullConversationJson: JSON.stringify(fullConversation),
+        });
+      }
+    } catch {
+      // Fire-and-forget — never throw
+    }
+  }
+
   // Stateless chat endpoint — each call sends full history + system prompt to Claude
   // Session history is managed client-side to keep the server stateless
   app.post("/api/chat", express.json({ limit: "10mb" }), async (req, res) => {
-    const { messages, imageBase64, imageMediaType } = req.body as {
+    const { messages, imageBase64, imageMediaType, sessionId } = req.body as {
       messages: { role: "user" | "assistant"; content: string }[];
       imageBase64?: string | null;
       imageMediaType?: string | null;
+      sessionId?: string;
     };
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: "messages array required" });
     }
+    const effectiveSessionId = sessionId || `anon-${Date.now()}`;
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     if (!anthropicKey) return res.status(500).json({ error: "AI not configured" });
@@ -1110,8 +1235,48 @@ Always recommend consulting a structural engineer for project-specific structura
 
 IMAGE ADVICE: Customers can send photos of their rebar, job site, or concrete pours. When you receive an image, analyze it and give specific, practical advice — identify bar sizes if visible, spacing, layout issues, cover concerns, or any problems you spot. Always tie advice back to what products RCP can supply.
 
-If a customer sends a plan sheet or asks about reading plans or doing a takeoff from plans, say exactly this: "For accurate plan takeoffs, use our dedicated Instant Takeoff tool at ai.rebarconcreteproducts.com. It processes each page at high resolution, extracts bar marks, sizes, spacing, and quantities, and generates a detailed preliminary estimate with a full bar list and fabrication cut sheet — far more accurate than what I can do from a chat image. I'm better suited for quick questions, specific detail clarifications, or quoting items once you already have your quantities."`;
+If a customer sends a plan sheet or asks about reading plans or doing a takeoff from plans, say exactly this: "For accurate plan takeoffs, use our dedicated Instant Takeoff tool at ai.rebarconcreteproducts.com. It processes each page at high resolution, extracts bar marks, sizes, spacing, and quantities, and generates a detailed preliminary estimate with a full bar list and fabrication cut sheet — far more accurate than what I can do from a chat image. I'm better suited for quick questions, specific detail clarifications, or quoting items once you already have your quantities."}`;
 
+    // ── Customer memory injection ─────────────────────────────────────────────
+    // Try to find returning customer by email from message history or by session
+    let finalSystemPrompt = systemPrompt;
+    try {
+      const allMsgText = messages.map(m => m.content).join(" ");
+      const emailMatch = allMsgText.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
+      let customerMemory = emailMatch
+        ? storage.getCustomerMemoryByEmail(emailMatch[0].toLowerCase())
+        : storage.getCustomerMemoryBySession(effectiveSessionId);
+      if (customerMemory && (customerMemory.name || customerMemory.company)) {
+        finalSystemPrompt += `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RETURNING CUSTOMER MEMORY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Name: ${customerMemory.name || "(unknown)"}
+Company: ${customerMemory.company || "(unknown)"}
+Quote count: ${customerMemory.quote_count || 0}
+Last quote: ${customerMemory.last_quote_summary || "(none)"}
+Typical products: ${customerMemory.typical_products || "(none)"}
+Notes: ${customerMemory.notes || "(none)"}
+
+Greet them by name. Skip re-collecting info already on file.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      }
+    } catch { /* non-fatal */ }
+
+    // ── Learned rules injection ───────────────────────────────────────────────
+    try {
+      const learnedRules = storage.getLearnedRules();
+      if (learnedRules.length > 0) {
+        finalSystemPrompt += `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LEARNED RULES (approved by Brian — follow exactly)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${learnedRules.map(r => r.ruleText).join("\n")}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      }
+    } catch { /* non-fatal */ }
 
     // ── Auto-inject delivery fee if the conversation mentions an address ──
     let messagesWithDelivery = [...messages];
@@ -1158,7 +1323,7 @@ If a customer sends a plan sheet or asks about reading plans or doing a takeoff 
         body: JSON.stringify({
           model: "claude-haiku-4-5",
           max_tokens: 500,
-          system: systemPrompt,
+          system: finalSystemPrompt,
           messages: (() => {
             // If image attached, replace last user message content with a vision block
             if (!imageBase64 || !imageMediaType) return messagesWithDelivery;
@@ -1186,6 +1351,49 @@ If a customer sends a plan sheet or asks about reading plans or doing a takeoff 
       const data = await response.json() as any;
       const reply = data.content?.[0]?.text || "Sorry, I couldn't generate a response. Please call us at 469-631-7730.";
       res.json({ reply });
+
+      // ── Post-response: fire-and-forget async work ───────────────────────────
+      (async () => {
+        try {
+          // 1) Auto-flag classification
+          const lastUserMsg = [...messages].reverse().find(m => m.role === "user");
+          if (lastUserMsg && anthropicKey) {
+            await maybeAutoFlag(
+              effectiveSessionId,
+              lastUserMsg.content,
+              reply,
+              [...messages, { role: "assistant" as const, content: reply }],
+              anthropicKey
+            );
+          }
+
+          // 2) Extract and save customer info from conversation history
+          extractAndSaveCustomerInfo(
+            [...messages, { role: "assistant" as const, content: reply }],
+            effectiveSessionId
+          );
+
+          // 3) If this response contains [CONFIRM_ESTIMATE], increment quote_count
+          if (reply.includes("[CONFIRM_ESTIMATE]")) {
+            const allMsgText2 = messages.map(m => m.content).join(" ");
+            const emailMatch2 = allMsgText2.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
+            if (emailMatch2) {
+              const mem = storage.getCustomerMemoryByEmail(emailMatch2[0].toLowerCase());
+              const newCount = (mem?.quote_count || 0) + 1;
+              // Build a brief summary from the reply
+              const summaryMatch = reply.match(/\$[\d,]+\.?\d*/); // find first dollar amount
+              const today = new Date().toISOString().slice(0, 10);
+              const lastQuoteSummary = summaryMatch
+                ? `${summaryMatch[0]} estimate — ${today}`
+                : `Estimate — ${today}`;
+              storage.upsertCustomerMemory(emailMatch2[0].toLowerCase(), {
+                quoteCount: newCount,
+                lastQuoteSummary,
+              });
+            }
+          }
+        } catch { /* fire-and-forget — never propagate */ }
+      })();
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -1250,5 +1458,76 @@ If a customer sends a plan sheet or asks about reading plans or doing a takeoff 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     fs.createReadStream(pdfPath).pipe(res);
+  });
+
+  // ── ADMIN: Self-Learning System API ───────────────────────────────────────────────
+
+  // GET /api/admin/flags — list pending flagged conversations
+  app.get("/api/admin/flags", (_req, res) => {
+    try {
+      const flags = storage.getPendingFlags();
+      res.json(flags);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/admin/flags/:id/approve — approve flag and create a learned rule
+  app.post("/api/admin/flags/:id/approve", express.json(), (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { ruleText, category } = req.body as { ruleText?: string; category?: string };
+      storage.reviewFlag(id, "approved");
+      if (ruleText && ruleText.trim()) {
+        storage.addLearnedRule(ruleText.trim(), category || "correction", id);
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/admin/flags/:id/dismiss — dismiss flag
+  app.post("/api/admin/flags/:id/dismiss", (_req, res) => {
+    try {
+      const id = Number(_req.params.id);
+      storage.reviewFlag(id, "dismissed");
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/admin/learned-rules — list all active learned rules
+  app.get("/api/admin/learned-rules", (_req, res) => {
+    try {
+      const rules = storage.getLearnedRules();
+      res.json(rules);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/admin/learned-rules — manually add a learned rule
+  app.post("/api/admin/learned-rules", express.json(), (req, res) => {
+    try {
+      const { ruleText, category } = req.body as { ruleText: string; category: string };
+      if (!ruleText || !ruleText.trim()) return res.status(400).json({ error: "ruleText is required" });
+      storage.addLearnedRule(ruleText.trim(), category || "behavior");
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // DELETE /api/admin/learned-rules/:id — deactivate a learned rule
+  app.delete("/api/admin/learned-rules/:id", (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      storage.deactivateLearnedRule(id);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 }
