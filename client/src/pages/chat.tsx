@@ -69,6 +69,13 @@ export default function ChatPage() {
   const msgsContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Stable session ID — one conversation record per chat session in the dashboard
+  const sessionId = useRef<string>(null as any);
+  if (!sessionId.current) {
+    let id = sessionStorage.getItem('rcp_estimator_session');
+    if (!id) { id = 'est-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); sessionStorage.setItem('rcp_estimator_session', id); }
+    sessionId.current = id;
+  }
 
   useEffect(() => {
     // Only auto-scroll after the first message — don't hijack page scroll on mount
@@ -318,6 +325,7 @@ export default function ChatPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             messages: newHistory.map(m => ({ role: m.role, content: m.content })),
+            sessionId: sessionId.current,
             imageBase64: imageToSend?.base64 || null,
             imageMediaType: imageToSend?.mediaType || null,
           }),
@@ -404,7 +412,7 @@ export default function ChatPage() {
           const retryRes = await fetchWithTimeout("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ messages: retryMessages }),
+            body: JSON.stringify({ messages: retryMessages, sessionId: sessionId.current }),
           }, 30000);
           if (retryRes.ok) {
             const retryData = await retryRes.json();
