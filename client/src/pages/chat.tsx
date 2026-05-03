@@ -556,9 +556,10 @@ export default function ChatPage() {
                   href={estimate.estimateLink}
                   target="_blank"
                   rel="noopener noreferrer"
+                  download
                   className="flex items-center gap-2 bg-[#C8D400] text-black text-sm font-bold px-4 py-2 rounded-lg hover:bg-[#b0bb00] transition-colors w-full justify-center"
                 >
-                  <ExternalLink className="w-4 h-4" /> View Estimate
+                  <ExternalLink className="w-4 h-4" /> Download Estimate PDF
                 </a>
               ) : (
                 <p className="text-xs text-gray-400">Check your email for the estimate PDF.</p>
