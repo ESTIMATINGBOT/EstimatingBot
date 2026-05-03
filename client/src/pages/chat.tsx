@@ -62,6 +62,8 @@ export default function ChatPage() {
   const [estimating, setEstimating] = useState(false);
   const [estimate, setEstimate] = useState<EstimateResult | null>(null);
   const [pendingOrder, setPendingOrder] = useState<OrderData | null>(null);
+  const [verificationPending, setVerificationPending] = useState(false);
+  const [verificationOrder, setVerificationOrder] = useState<OrderData | null>(null);
   const [pendingImage, setPendingImage] = useState<{ base64: string; mediaType: string; dataUrl: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const msgsContainerRef = useRef<HTMLDivElement>(null);
