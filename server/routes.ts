@@ -1410,6 +1410,26 @@ ${learnedRules.map(r => r.ruleText).join("\n")}
             }
           }
         } catch { /* fire-and-forget — never propagate */ }
+
+        // 4) Log full conversation to SMS bot dashboard DB
+        try {
+          const customerName = req.body?.customerName || "";
+          const customerEmail = req.body?.customerEmail || "";
+          const customerPhone = req.body?.customerPhone || "";
+          const sessionId = req.body?.sessionId || effectiveSessionId || "";
+          await fetch("https://rcp-sms-bot-production.up.railway.app/api/log-web-chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sessionId,
+              customerName,
+              customerEmail,
+              customerPhone,
+              messages,
+              latestReply: reply,
+            }),
+          });
+        } catch { /* never propagate */ }
       })();
     } catch (err: any) {
       res.status(500).json({ error: err.message });
