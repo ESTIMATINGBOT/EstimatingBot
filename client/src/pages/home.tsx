@@ -215,9 +215,8 @@ export default function HomePage() {
       <section className="bg-black text-white pt-12 pb-10 px-4">
         <div className="max-w-3xl mx-auto text-center">
           {/* Animated badge */}
-          <div className="inline-flex items-center gap-2 bg-[#C8D400]/10 border border-[#C8D400]/30 text-[#C8D400] text-xs font-bold px-3 py-1 rounded-full mb-6 uppercase tracking-wider">
-            <Zap className="w-3.5 h-3.5" />
-            AI-Powered Rebar Tools
+          <div className="inline-flex items-center gap-2 bg-[#C8D400]/10 border border-[#C8D400]/30 text-[#C8D400] text-xs font-bold px-3 py-1.5 rounded-full mb-6">
+            <img src="/corebuild_ai_logo.png" alt="CoreBuild AI" className="h-4" />
           </div>
 
           {/* Rotating headline */}

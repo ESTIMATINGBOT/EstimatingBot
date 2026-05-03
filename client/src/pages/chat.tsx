@@ -42,7 +42,7 @@ interface EstimateResult {
 const WELCOME: Message = {
   role: "assistant",
   content:
-    "Hi! I'm the RCP Assistant. I can help you with rebar questions, material quantities, and placing orders with a QuickBooks invoice.\n\nFor plan uploads and automated AI estimates, use the **Instant Takeoff** tab above.\n\nHow can I help you today?",
+    "Hi! I'm the CoreBuild AI Assistant for Rebar Concrete Products. I can help you with rebar questions, material quantities, and placing orders with a QuickBooks invoice.\n\nFor plan uploads and automated AI estimates, use the **Instant Takeoff** tab above.\n\nHow can I help you today?",
 };
 
 function renderContent(text: string) {
@@ -494,8 +494,8 @@ export default function ChatPage() {
         {messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             {msg.role === "assistant" && (
-              <div className="w-8 h-8 rounded-full bg-[#C8D400]/20 border border-[#C8D400]/40 flex items-center justify-center flex-shrink-0 mr-3 mt-0.5">
-                <MessageSquare className="w-4 h-4 text-[#C8D400]" />
+              <div className="w-8 h-8 rounded-full bg-[#C8D400]/10 border border-[#C8D400]/30 flex items-center justify-center flex-shrink-0 mr-3 mt-0.5 overflow-hidden">
+                <img src="/corebuild_ai_logo.png" alt="CoreBuild AI" className="w-6 h-6 object-contain" />
               </div>
             )}
             <div className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
@@ -567,8 +567,8 @@ export default function ChatPage() {
 
         {(loading || invoicing || estimating) && (
           <div className="flex justify-start">
-            <div className="w-8 h-8 rounded-full bg-[#C8D400]/20 border border-[#C8D400]/40 flex items-center justify-center flex-shrink-0 mr-3 mt-0.5">
-              <MessageSquare className="w-4 h-4 text-[#C8D400]" />
+            <div className="w-8 h-8 rounded-full bg-[#C8D400]/10 border border-[#C8D400]/30 flex items-center justify-center flex-shrink-0 mr-3 mt-0.5 overflow-hidden">
+              <img src="/corebuild_ai_logo.png" alt="CoreBuild AI" className="w-6 h-6 object-contain" />
             </div>
             <div className="bg-white/5 border border-white/10 rounded-2xl rounded-tl-sm px-4 py-3">
               <div className="flex gap-1 items-center h-4">
@@ -666,7 +666,12 @@ export default function ChatPage() {
             </Button>
           </form>
         </div>
-        <p className="text-xs text-gray-600 mt-1.5 text-center">
+        {/* Powered by CoreBuild AI */}
+        <div className="flex items-center justify-center gap-1.5 mt-2">
+          <span className="text-gray-600 text-[10px] uppercase tracking-wider">Powered by</span>
+          <img src="/corebuild_ai_logo.png" alt="CoreBuild AI" className="h-3.5 opacity-60" />
+        </div>
+        <p className="text-xs text-gray-600 mt-1 text-center">
           <span className="hidden sm:inline">Enter to send · Shift+Enter for new line · </span>
           Questions?{" "}
           <a href="tel:4696317730" className="text-[#C8D400]/70 hover:text-[#C8D400]">469-631-7730</a>
