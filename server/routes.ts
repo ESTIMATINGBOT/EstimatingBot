@@ -1456,7 +1456,11 @@ ${learnedRules.map(r => r.ruleText).join("\n")}
       const SMS_BOT = "https://rcp-sms-bot-production.up.railway.app";
       const upstream = await fetch(`${SMS_BOT}/api/web-order`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          // Pass trusted-caller header so SMS bot skips phone verification gate
+          "x-rcp-internal": "rcp-shopify-2024",
+        },
         body: JSON.stringify(req.body),
       });
       const data = await upstream.json() as any;
