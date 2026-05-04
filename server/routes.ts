@@ -1430,6 +1430,26 @@ ${learnedRules.map(r => r.ruleText).join("\n")}
             }),
           });
         } catch { /* never propagate */ }
+
+        // 5) Mirror conversation to CoreBuild Live Chats dashboard
+        try {
+          const allMsgs = [...messages, { role: "assistant" as const, content: reply }];
+          await fetch("https://corebuild-platform-production.up.railway.app/api/ingest-web-chat", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-company-slug": "rcp",
+              "x-ingest-token": "corebuild-ingest-2024",
+            },
+            body: JSON.stringify({
+              sessionId: req.body?.sessionId || effectiveSessionId || `web_${Date.now()}`,
+              messages: allMsgs,
+              customerName: req.body?.customerName || "",
+              customerEmail: req.body?.customerEmail || "",
+              customerPhone: req.body?.customerPhone || "",
+            }),
+          });
+        } catch { /* never propagate */ }
       })();
     } catch (err: any) {
       res.status(500).json({ error: err.message });
