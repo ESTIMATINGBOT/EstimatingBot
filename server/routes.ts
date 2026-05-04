@@ -728,6 +728,9 @@ Do NOT flag normal conversation or successful transactions.`,
 
   // Stateless chat endpoint — each call sends full history + system prompt to Claude
   // Session history is managed client-side to keep the server stateless
+  //
+  // If COREBUILD_PROXY=true, all chat is proxied to CoreBuild AI platform so that
+  // conversations, QBO invoices, and email notifications all run through CoreBuild.
   app.post("/api/chat", express.json({ limit: "10mb" }), async (req, res) => {
     const { messages, imageBase64, imageMediaType, sessionId } = req.body as {
       messages: { role: "user" | "assistant"; content: string }[];
@@ -739,6 +742,40 @@ Do NOT flag normal conversation or successful transactions.`,
       return res.status(400).json({ error: "messages array required" });
     }
     const effectiveSessionId = sessionId || `anon-${Date.now()}`;
+
+    // ── CoreBuild proxy mode ────────────────────────────────────────────────
+    if (process.env.COREBUILD_PROXY === "true") {
+      try {
+        const upstream = await fetch(
+          "https://corebuild-platform-production.up.railway.app/api/chat-proxy",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-company-slug": "rcp",
+            },
+            body: JSON.stringify({
+              messages,
+              sessionId: effectiveSessionId,
+              imageBase64: imageBase64 ?? null,
+              imageMediaType: imageMediaType ?? null,
+              customerName:  req.body?.customerName  ?? "",
+              customerPhone: req.body?.customerPhone ?? "",
+              customerEmail: req.body?.customerEmail ?? "",
+              items:         req.body?.items         ?? [],
+            }),
+          }
+        );
+        const data = await upstream.json() as any;
+        // CoreBuild returns { reply, ... } — forward exactly
+        return res.status(upstream.status).json({ reply: data.reply ?? data.error ?? "Service error" });
+      } catch (proxyErr: any) {
+        console.error("[chat-proxy] CoreBuild proxy error:", proxyErr);
+        return res.status(500).json({ reply: "Our assistant is temporarily unavailable. Please call 469-631-7730." });
+      }
+    }
+    // ── End CoreBuild proxy mode — legacy EstimatingBot logic below ────────
+
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     if (!anthropicKey) return res.status(500).json({ error: "AI not configured" });
