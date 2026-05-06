@@ -746,8 +746,9 @@ Do NOT flag normal conversation or successful transactions.`,
     // ── CoreBuild proxy mode ────────────────────────────────────────────────
     if (process.env.COREBUILD_PROXY === "true") {
       try {
+        // Use streaming endpoint so platform-engine.ts universal rules are applied
         const upstream = await fetch(
-          "https://corebuild-platform-production.up.railway.app/api/chat-proxy",
+          "https://corebuild-platform-production.up.railway.app/api/chat-proxy/stream",
           {
             method: "POST",
             headers: {
@@ -766,9 +767,26 @@ Do NOT flag normal conversation or successful transactions.`,
             }),
           }
         );
-        const data = await upstream.json() as any;
-        // CoreBuild returns { reply, ... } — forward exactly
-        return res.status(upstream.status).json({ reply: data.reply ?? data.error ?? "Service error" });
+        // Streaming endpoint returns SSE text/event-stream — collect full stream into reply
+        const rawText = await upstream.text();
+        // Parse SSE: extract all data: {"token":"..."} lines and concatenate tokens
+        let reply = "";
+        let lastMeta: any = null;
+        for (const line of rawText.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const json = JSON.parse(line.slice(6));
+            if (json.token !== undefined) reply += json.token;
+            if (json.done) lastMeta = json;
+          } catch {}
+        }
+        if (!reply && lastMeta?.error) reply = lastMeta.error;
+        if (!reply) reply = "Our assistant is temporarily unavailable. Please call 469-631-7730.";
+        const responsePayload: any = { reply };
+        if (lastMeta?.invoiceNumber) responsePayload.invoiceNumber = lastMeta.invoiceNumber;
+        if (lastMeta?.paymentLink)   responsePayload.paymentLink   = lastMeta.paymentLink;
+        if (lastMeta?.estimateId)    responsePayload.estimateId    = lastMeta.estimateId;
+        return res.status(200).json(responsePayload);
       } catch (proxyErr: any) {
         console.error("[chat-proxy] CoreBuild proxy error:", proxyErr);
         return res.status(500).json({ reply: "Our assistant is temporarily unavailable. Please call 469-631-7730." });
